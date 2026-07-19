@@ -3,6 +3,7 @@
   "imports": {
     "@std/assert": "jsr:@std/assert@1",
     "@std/cache": "jsr:@std/cache@^0.2.3",
+    "dayjs": "npm:dayjs@^1.11.21",
     "protobufjs": "npm:protobufjs@^8.7.1"
   },
   "compilerOptions": {

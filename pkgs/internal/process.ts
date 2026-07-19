@@ -13,10 +13,7 @@ async function exec() {
 
     const ps = [] as Promise<any>[];
     for (const action of BeforeExitActions) {
-        const val: any = action();
-        if (val.then && typeof val.then === "function") {
-            ps.push(val);
-        }
+        ps.push(Promise.resolve(action()));
     }
     await Promise.allSettled(ps);
     process.exit(0);
@@ -42,3 +39,4 @@ declare global {
         }
     }
 }
+

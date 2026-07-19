@@ -4,6 +4,10 @@ export interface IReportor {
 
 const AllReportors = new Set<WeakRef<IReportor>>();
 
+export const Config = {
+    detail: false,
+};
+
 export function collect(): string {
     const buf = [] as string[];
 
@@ -32,3 +36,20 @@ export function reportor<T extends { new(...args: any): IReportor }>(target: T, 
     Object.defineProperty(ncls, 'name', { value: target.name });
     return ncls;
 }
+
+@reportor
+class SysReportor implements IReportor {
+    report(): string {
+        return JSON.stringify({
+            kind: "Sys",
+            heap: Deno.memoryUsage(),
+            load: Deno.loadavg(),
+        });
+    }
+};
+
+new SysReportor();
+
+Deno.test("collect", () => {
+    console.log(collect());
+});

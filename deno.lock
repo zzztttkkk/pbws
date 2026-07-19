@@ -4,6 +4,7 @@
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/cache@~0.2.3": "0.2.3",
     "jsr:@std/internal@^1.0.12": "1.0.14",
+    "npm:dayjs@^1.11.21": "1.11.21",
     "npm:protobufjs@^8.7.1": "8.7.1"
   },
   "jsr": {
@@ -21,6 +22,9 @@
     }
   },
   "npm": {
+    "dayjs@1.11.21": {
+      "integrity": "sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA=="
+    },
     "long@5.3.2": {
       "integrity": "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA=="
     },
@@ -35,6 +39,7 @@
     "dependencies": [
       "jsr:@std/assert@1",
       "jsr:@std/cache@~0.2.3",
+      "npm:dayjs@^1.11.21",
       "npm:protobufjs@^8.7.1"
     ]
   }
