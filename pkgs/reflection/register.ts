@@ -1,38 +1,60 @@
-import { IsClass } from "./classes.ts";
-import "reflect-metadata";
-
-export class PropInfo<T> {
-    public readonly designtype: any;
+export class PropInfo<T extends object> {
     public accessorstatus?: {
         canget?: boolean;
         canset?: boolean;
     };
-    public readonly opts?: T = undefined;
+    public opts?: IPropOpts<T> = undefined;
 
-    constructor(designtype: any, opts?: T) {
-        this.designtype = designtype;
+    constructor(opts?: IPropOpts<T>) {
         this.opts = opts;
+    }
+
+    get readable(): boolean {
+        if (!this.accessorstatus) return true;
+        return this.accessorstatus.canget ?? false;
+    }
+
+    get writable(): boolean {
+        if (!this.accessorstatus) return true;
+        return this.accessorstatus.canset ?? false;
+    }
+
+    get designtype(): TypeValue | undefined {
+        const type = this.opts?.designtype;
+        if (!type) return undefined;
+        if (typeof type === "function" || type instanceof ContainerType) return type;
+        return undefined;
     }
 }
 
-class MethodInfo<T> {
-    public paramtypes: any[] | undefined;
-    public returntype: any | undefined;
-    public opts?: T;
+class MethodInfo<T extends object> {
+    public opts?: IMethodOpts<T>;
+
+    constructor(opts?: IMethodOpts<T>) {
+        this.opts = opts;
+    }
+
+    get paramtypes(): TypeValue[] | undefined {
+        return this.opts?.paramtypes;
+    }
+
+    get returntype(): TypeValue | undefined {
+        return this.opts?.returntype;
+    }
 }
 
-type PropsMetaMap<T> = Map<string, PropInfo<T>>;
-type MethodsMetaMap<T> = Map<string, MethodInfo<T>>;
+type PropsMetaMap<T extends object> = Map<string, PropInfo<T>>;
+type MethodsMetaMap<T extends object> = Map<string, MethodInfo<T>>;
 
-export class MetaInfo<ClsOpts, PropOpts, MethodOpts> {
+export class MetaInfo<C extends object, P extends object, M extends object> {
     target: Function;
-    #register: MetaRegister<ClsOpts, PropOpts, MethodOpts>;
+    #register: MetaRegister<C, P, M>;
     #_chain: Function[];
-    #_props: PropsMetaMap<PropOpts> | null | undefined;
-    #_methods: MethodsMetaMap<MethodOpts> | null | undefined;
+    #_props: PropsMetaMap<P> | null | undefined;
+    #_methods: MethodsMetaMap<M> | null | undefined;
 
     constructor(
-        register: MetaRegister<ClsOpts, PropOpts, MethodOpts>,
+        register: MetaRegister<C, P, M>,
         cls: Function,
     ) {
         this.#register = register;
@@ -47,34 +69,55 @@ export class MetaInfo<ClsOpts, PropOpts, MethodOpts> {
         this.#_chain = this.#_chain.reverse();
     }
 
-    cls(): ClsOpts | undefined {
-        return this.#register[ClsMetaDataKey].get(this.target);
+    private scope(cls: Function): Scope<C, P, M> | undefined {
+        const metas = cls[Symbol.metadata];
+        if (!metas) return undefined;
+        const scope = metas[this.#register.name];
+        if (!scope) return undefined;
+        return scope as Scope<C, P, M>;
     }
 
-    props(): PropsMetaMap<PropOpts> | null {
+    cls(): C | undefined {
+        return this.scope(this.target)?.cls;
+    }
+
+    props(opts?: { readable?: boolean; writable?: boolean; }): PropsMetaMap<P> | null {
         if (this.#_props === undefined) {
-            const props: PropsMetaMap<PropOpts> = new Map;
+            const props: PropsMetaMap<P> = new Map;
 
             for (const cls of this.#_chain) {
-                const pm = this.#register[PropsMetaDataKey].get(cls);
-                if (!pm) continue;
-                for (const [k, v] of pm) {
+                const scope = this.scope(cls);
+                if (!scope) continue;
+                for (const [k, v] of scope.props) {
                     props.set(k, v);
                 }
             }
             this.#_props = props.size ? props : null;
         }
+
+        if (this.#_props == null) return null;
+
+        if (opts && (opts.readable || opts.writable)) {
+            const newprops = new Map();
+            for (const [k, v] of this.#_props) {
+                if (opts.readable && !v.readable) continue;
+                if (opts.writable && !v.writable) continue;
+                newprops.set(k, v);
+            }
+            if (newprops.size < 1) return null;
+            return newprops;
+        }
         return this.#_props
     }
 
-    methods(): MethodsMetaMap<MethodOpts> | null {
+    methods(): MethodsMetaMap<M> | null {
         if (this.#_methods === undefined) {
-            const methods: MethodsMetaMap<MethodOpts> = new Map;
+            const methods: MethodsMetaMap<M> = new Map;
 
             for (const cls of this.#_chain) {
-                const mm = this.#register[MethodMetaDataKey].get(cls);
-                if (!mm) continue;
-                for (const [k, v] of mm) {
+                const scope = this.scope(cls);
+                if (!scope) continue;
+                for (const [k, v] of scope.methods) {
                     methods.set(k, v);
                 }
             }
@@ -83,136 +126,127 @@ export class MetaInfo<ClsOpts, PropOpts, MethodOpts> {
         return this.#_methods;
     }
 
-    prop(name: string): PropInfo<PropOpts> | undefined {
+    prop(name: string): PropInfo<P> | undefined {
         return this.props()?.get(name);
     }
 }
 
-const MetaInfosKey = Symbol("reflection.metainfos");
-
-export function metainfo<ClsOpts, PropOpts, MethodOpts>(
-    register: MetaRegister<ClsOpts, PropOpts, MethodOpts>,
+export function metainfo<C extends object, P extends object, M extends object>(
+    register: MetaRegister<C, P, M>,
     cls: Function,
-): MetaInfo<ClsOpts, PropOpts, MethodOpts> {
-    if (!IsClass(cls)) {
-        throw new Error(`${Deno.inspect(cls)} is not a class`);
-    }
-
-    const metas: Record<symbol, any> = Object.getOwnPropertyDescriptor(cls, MetaInfosKey)?.value || {};
-    const meta = metas[register.name] || new MetaInfo(register, cls);
-    metas[register.name] = meta;
-    Reflect.set(cls, MetaInfosKey, metas);
-    return meta;
+): MetaInfo<C, P, M> {
+    return register.meta(cls);
 }
 
-const ClsMetaDataKey = Symbol("reflection.clsmd");
-const PropsMetaDataKey = Symbol("reflection.propsmd");
-const MethodMetaDataKey = Symbol("reflection.methmd");
+export type IPropOpts<T extends object> = T & {
+    designtype?: TypeValue;
+};
 
-export function AllClasses(reg: MetaRegister): Function[] {
-    return Array.from(reg[ClsMetaDataKey].keys()).sort((a, b) => a.name.localeCompare(b.name));
+export type IMethodOpts<T extends object> = T & {
+    paramtypes?: TypeValue[];
+    returntype?: TypeValue;
+    wrap: <F extends Function>(f: F) => F;
+};
+
+interface Scope<C extends object, P extends object, M extends object> {
+    cls: C | undefined;
+    props: PropsMetaMap<P>;
+    methods: MethodsMetaMap<M>;
 }
 
 export class MetaRegister<
-    ClsOpts = unknown,
-    PropOpts = unknown,
-    MethodOpts = unknown,
+    C extends object,
+    P extends object,
+    M extends object,
 > {
     public readonly name: symbol;
-
-    private readonly [ClsMetaDataKey]: Map<Function, ClsOpts | undefined>;
-    private readonly [PropsMetaDataKey]: Map<Function, PropsMetaMap<PropOpts>>;
-    private readonly [MethodMetaDataKey]: Map<
-        Function,
-        MethodsMetaMap<MethodOpts>
-    >;
+    public readonly AllClses: Function[] = [];
+    readonly #metas: Map<Function, MetaInfo<C, P, M>> = new Map();
 
     constructor(name: symbol) {
         this.name = name;
-        this[ClsMetaDataKey] = new Map();
-        this[PropsMetaDataKey] = new Map();
-        this[MethodMetaDataKey] = new Map();
     }
 
-    cls(opts?: ClsOpts): ClassDecorator {
-        return (target) => {
-            this[ClsMetaDataKey].set(target, opts);
+    private scope(ctx: DecoratorContext): Scope<C, P, M> {
+        const sobj: Scope<C, P, M> = (ctx.metadata[this.name] as Scope<C, P, M> | undefined) || {
+            cls: undefined,
+            props: new Map,
+            methods: new Map,
+        };
+        ctx.metadata[this.name] = sobj;
+        return sobj;
+    }
+
+    cls(opts?: C) {
+        return (target: Function, ctx: ClassDecoratorContext) => {
+            this.scope(ctx).cls = opts;
+            this.AllClses.push(target);
         };
     }
 
-    prop(opts?: PropOpts, info?: { designtype: TypeValue }): PropertyDecorator {
-        return (target: object, key: string | symbol, desc?: TypedPropertyDescriptor<any>) => {
-            if (typeof key === "symbol") {
-                throw new Error(`decorator can not on a symbol`);
+    prop(opts?: IPropOpts<P>) {
+        return (_target: any, ctx: ClassGetterDecoratorContext | ClassSetterDecoratorContext | ClassFieldDecoratorContext | ClassAccessorDecoratorContext) => {
+            if (typeof ctx.name == "symbol") {
+                throw new Error("decorator can not be used on a symbol");
             }
 
-            const cls: Function = target.constructor;
+            const props = this.scope(ctx).props;
+            const prop: PropInfo<P> = props.get(ctx.name) || new PropInfo(opts);
+            prop.opts = { ...prop.opts, ...opts } as IPropOpts<P>;
 
-            const pm: PropsMetaMap<PropOpts> = this[PropsMetaDataKey].get(cls) || new Map();
-            let designType;
-            if (info) {
-                designType = info.designtype;
-            } else {
-                designType = Reflect.getMetadata("design:type", target, key);
-                if (desc) {
-                    if (!desc.get) throw new Error(`prop decorator on a method`);
-                    designType = Reflect.getMetadata("design:returntype", target, key);
+            switch (ctx.kind) {
+                case "accessor": {
+                    prop.accessorstatus = { canget: true, canset: true };
+                    break;
+                }
+                case "getter": {
+                    if (!prop.accessorstatus) prop.accessorstatus = {};
+                    prop.accessorstatus.canget = true;
+                    break;
+                }
+                case "setter": {
+                    if (!prop.accessorstatus) prop.accessorstatus = {};
+                    prop.accessorstatus.canset = true;
+                    break;
+                }
+                case "field": {
+                    break;
                 }
             }
-            const prop = new PropInfo(designType, opts);
-            if (desc) {
-                prop.accessorstatus = {};
-                prop.accessorstatus.canget = desc.get != null;
-                prop.accessorstatus.canset = desc.set != null;
-            }
-            pm.set(key, prop);
-            this[PropsMetaDataKey].set(cls, pm);
+
+            props.set(ctx.name, prop);
         };
     }
 
-    method(opts?: MethodOpts, info?: { paramtypes: TypeValue[], returntype: TypeValue }): MethodDecorator {
-        return (target, key, desc) => {
-            if (typeof key === "symbol") {
-                throw new Error(`decorator can not on a symbol`);
-            }
-            if (desc.get || desc.set) {
-                throw new Error(`method decorator on a accessor`);
+    method(opts?: IMethodOpts<M>) {
+        return (target: Function, ctx: ClassMethodDecoratorContext) => {
+            if (typeof ctx.name == "symbol") {
+                throw new Error("decorator can not be used on a symbol");
             }
 
-            const cls: Function = target.constructor;
+            const methods = this.scope(ctx).methods;
+            methods.set(ctx.name, new MethodInfo(opts));
 
-            const pm: MethodsMetaMap<MethodOpts> = this[MethodMetaDataKey].get(cls) || new Map();
-
-            let methodinfo = pm.get(key as string);
-            if (!methodinfo) methodinfo = new MethodInfo();
-
-            if (info) {
-                methodinfo.paramtypes = info.paramtypes;
-                methodinfo.returntype = info.returntype;
-            } else {
-                methodinfo.paramtypes = Reflect.getMetadata(
-                    "design:paramtypes",
-                    target,
-                    key,
-                );
-                methodinfo.returntype = Reflect.getMetadata(
-                    "design:returntype",
-                    target,
-                    key,
-                );
+            if (opts?.wrap) {
+                const wraped = opts.wrap(target);
+                return function (this: any, ...args: any[]) {
+                    return wraped.apply(this, args);
+                };
             }
-            methodinfo.opts = opts;
-
-            pm.set(key, methodinfo);
-            this[MethodMetaDataKey].set(cls, pm);
         };
+    }
+
+    meta(cls: Function): MetaInfo<C, P, M> {
+        const ins = this.#metas.get(cls) || new MetaInfo(this, cls);
+        this.#metas.set(cls, ins);
+        return ins;
     }
 }
 
 Deno.test("register", () => {
     const reg = new MetaRegister<{}, {}, {}>(Symbol("test"));
 
-    @reg.cls({})
+    @reg.cls()
     class X {
         @reg.prop()
         public a!: number;
@@ -228,7 +262,7 @@ Deno.test("register", () => {
 
 
     class Y extends X {
-        @reg.prop()
+        @reg.prop({ designtype: Number })
         public d!: number;
 
         @reg.method()
@@ -247,6 +281,8 @@ Deno.test("register", () => {
     console.log(ymeta.cls());
     console.log(ymeta.props());
     console.log(ymeta.methods());
+
+    console.log(reg.AllClses);
 })
 
 const DenoCustomInspect = Symbol.for("Deno.customInspect");
@@ -266,7 +302,6 @@ export class ContainerType {
         )}]`;
     }
 }
-
 
 export type TypeValue = ContainerType | Function;
 

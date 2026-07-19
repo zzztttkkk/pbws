@@ -2,14 +2,12 @@
   "tasks": {},
   "imports": {
     "@std/assert": "jsr:@std/assert@1",
-    "protobufjs": "npm:protobufjs@^8.7.1",
-    "reflect-metadata": "npm:reflect-metadata@^0.2.2"
+    "@std/cache": "jsr:@std/cache@^0.2.3",
+    "protobufjs": "npm:protobufjs@^8.7.1"
   },
   "compilerOptions": {
     "noImplicitAny": false,
-    "skipLibCheck": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
+    "skipLibCheck": true
   },
   "lint": {
     "rules": {

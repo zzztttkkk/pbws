@@ -21,14 +21,14 @@ export interface IPropsOptions {
     nullable?: boolean;
 }
 
-const reg = new reflection.MetaRegister<IMessageOptions, IPropsOptions, unknown>(Symbol("fv.pkgs.pb"));
+const reg = new reflection.MetaRegister<IMessageOptions, IPropsOptions, {}>(Symbol("fv.pkgs.pb"));
 
 export function msg(opts?: IMessageOptions) { return reg.cls(opts); }
 
-export function field(opts?: IPropsOptions, info?: { designtype: reflection.TypeValue }) { return reg.prop(opts, info); }
+export function field(opts?: IPropsOptions) { return reg.prop(opts); }
 
 const alltypes = new Set<Function>();
-const metas = [] as reflection.MetaInfo<IMessageOptions, IPropsOptions, unknown>[];
+const metas = [] as reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>[];
 
 let idseq = 0;
 const msgidmap: Record<string, { id: number, opts?: IMessageOptions }> = {};
@@ -46,8 +46,7 @@ export async function gen(dest: string, opts?: { packages?: string[]; filter?: (
         await globimport(opts.globs);
     }
 
-    const clses = reflection.AllClasses(reg);
-    for (const cls of clses) {
+    for (const cls of reg.AllClses) {
         collect(cls);
     }
 
@@ -122,7 +121,10 @@ function collect(cls: Function) {
     if (!props || props.size < 1) {
         return;
     }
-    for (const prop of props.values()) {
+    for (const [pname, prop] of props) {
+        if (!prop.designtype) {
+            throw new Error(`prop ${cls.name}.${pname} has no design type`);
+        }
         if (prop.designtype instanceof reflection.ContainerType) {
             collect(prop.designtype.eletype as any);
             if (prop.designtype instanceof reflection.MapType) {
@@ -149,7 +151,7 @@ function push_desc(desc: string | undefined, prefix: string, buf: string[]) {
     buf.push(...desc.split('\n').map(v => `${prefix}// ${v}`));
 }
 
-function one_type(meta: reflection.MetaInfo<IMessageOptions, IPropsOptions, unknown>, buf: string[]) {
+function one_type(meta: reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>, buf: string[]) {
     const clsopts = meta.cls();
     let desc = clsopts?.description || "";
 

@@ -2,8 +2,8 @@ import { assertEquals } from "@std/assert/equals";
 
 export function IsClass(v: Function): boolean {
     if (typeof v !== "function") return false;
-    const ins = Deno.inspect(v, { depth: 1, colors: false });
-    if (!ins.startsWith(`[class ${v.name}`) || !ins.endsWith("]")) {
+    const ins = Deno.inspect(v, { depth: 0, colors: false });
+    if (!ins.startsWith(`[class ${v.name}`)) {
         return false;
     }
     const ts = v.toString();
