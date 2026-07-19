@@ -5,6 +5,7 @@ import { AppError, ErrorCode, FailedResponse } from "./errors.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { RwLock } from "./pkgs/sync/index.ts";
 import { entry_state, globimport } from "./internal.ts";
+import { Counter, IReportor, reportor, Config as ReportorConfig } from "./pkgs/internal/reportor.ts";
 
 export class AppConfig {
     hostname?: string;
@@ -34,12 +35,20 @@ const reg = new reflection.MetaRegister<{}, {}, IServeProps>(Symbol("fv.pkgs.pb.
 
 export function serve(opts: Parameters<typeof reg.method>[0]) { return reg.method(opts); }
 
-export class App<CS extends IConnState> {
+enum AppCountKind {
+    AuthFailed,
+    ServeFailed,
+    InternalError,
+}
+
+@reportor
+export class App<CS extends IConnState> implements IReportor {
     private config!: AppConfig;
     private impl!: IAppImpls<CS>;
 
-    private services: Map<number, { fnc: (v: any) => Promise<any>, opts?: IServeProps }> = new Map;
+    private services: Map<number, { fnc: (v: any) => Promise<any>; opts?: IServeProps; name: string; }> = new Map;
     private connections: Map<string, Connection<CS>> = new Map;
+    private counter = new Counter(AppCountKind, true);
 
     private server: Deno.HttpServer | null = null;
 
@@ -51,6 +60,14 @@ export class App<CS extends IConnState> {
             throw new Error("App cannot be instantiated after gen() has been executed. Run the application in a separate entry without gen().");
         }
         entry_state.app_instantiated = true;
+    }
+
+    report(): string {
+        return JSON.stringify({
+            kind: "App",
+            conns: this.connections.size,
+            counter: this.counter,
+        });
     }
 
     pick(connids: Iterable<string>): Generator<Connection<CS>> {
@@ -106,7 +123,7 @@ export class App<CS extends IConnState> {
                 if (this.services.has(inputinfo.id)) {
                     throw new Error(`${cls.name}.${name}'s input type already registered`);
                 }
-                this.services.set(inputinfo.id, { fnc: async (v: any) => ins[name](v), opts: method.opts });
+                this.services.set(inputinfo.id, { fnc: async (v: any) => ins[name](v), opts: method.opts, name: `${cls.name}.${name}` });
             }
         }
     }
@@ -137,11 +154,12 @@ export class App<CS extends IConnState> {
                         state = new Error(`${Deno.inspect(e)}`);
                     }
                 }
-
                 if (state == null) {
+                    this.counter.incr(AppCountKind.AuthFailed);
                     return new Response(null, { status: 401 });
                 }
                 if (state instanceof Error) {
+                    this.counter.incr(AppCountKind.AuthFailed);
                     return new Response(null, { status: 401 });
                 }
 
@@ -167,11 +185,13 @@ export class App<CS extends IConnState> {
                                 try {
                                     resp = await handle.fnc(msg);
                                 } catch (e) {
+                                    this.counter.incr(AppCountKind.ServeFailed);
                                     let msg: FailedResponse;
                                     if (e instanceof AppError) {
                                         msg = e.toresp();
                                         console.error("AppError:", msg);
                                     } else {
+                                        this.counter.incr(AppCountKind.InternalError);
                                         msg = new FailedResponse();
                                         msg.code = ErrorCode.InternalError;
                                         msg.message = "Internal server error";

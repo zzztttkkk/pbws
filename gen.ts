@@ -166,7 +166,7 @@ function one_type(meta: reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>,
 
     push_desc(desc, "", buf);
     buf.push(`message ${name} {`);
-    const props = meta.props();
+    const props = meta.props({ readable: true });
     if (props) {
         let idx = 1;
         for (const [k, prop] of props.entries()) {

@@ -1,5 +1,5 @@
 import { List, Node } from "./list.ts";
-import { reportor, IReportor, Config } from "./reportor.ts";
+import { reportor, IReportor, Counter } from "./reportor.ts";
 
 interface Pair<K, V> {
     k: K;
@@ -7,30 +7,14 @@ interface Pair<K, V> {
     at: number;
 }
 
-class Counter {
-    set: bigint = 0n;
-    update: bigint = 0n;
-
-    get: bigint = 0n;
-    get_hit: bigint = 0n;
-    get_expired: bigint = 0n;
-
-    delete: bigint = 0n;
-
-    evict: bigint = 0n;
-
-    incr<K extends KeysOnly<Counter, bigint>>(key: K) {
-        if (!Config.detail) return;
-        this[key] += 1n;
-    }
-
-    toJSON() {
-        const obj = {};
-        for (const key of Object.keys(this)) {
-            obj[key] = (this[key] as bigint).toString();
-        }
-        return obj;
-    }
+enum OpKind {
+    Set,
+    Update,
+    Get,
+    GetHit,
+    GetExpired,
+    Delete,
+    Evict,
 }
 
 @reportor
@@ -40,7 +24,7 @@ export class LRUMap<K, V> implements IReportor {
     private _expire: number;
     private _vals: List<Pair<K, V>> = new List();
     private _map: Map<K, Node<Pair<K, V>>> = new Map();
-    private _counter = new Counter();
+    private _counter = new Counter(OpKind, true);
 
     constructor(name: string, capacity: number, expire: number) {
         if (capacity < 1) throw new Error("capacity must be at least 1");
@@ -73,7 +57,7 @@ export class LRUMap<K, V> implements IReportor {
             size: this._map.size,
             maxage: now - min_at,
             avgage: now - avg_at,
-            counters: this._counter,
+            counter: this._counter,
         });
     }
 
@@ -85,17 +69,17 @@ export class LRUMap<K, V> implements IReportor {
         while (this._map.size > this._capacity) {
             const node = this._vals.popr();
             if (!node) break;
-            this._counter.incr("evict");
+            this._counter.incr(OpKind.Evict);
             this._map.delete(node.val.k);
         }
     }
 
     set(key: K, val: V) {
-        this._counter.incr("set");
+        this._counter.incr(OpKind.Set);
 
         const node = this._map.get(key);
         if (node) {
-            this._counter.incr("update");
+            this._counter.incr(OpKind.Update);
 
             node.val.val = val;
             node.val.at = Date.now();
@@ -112,7 +96,7 @@ export class LRUMap<K, V> implements IReportor {
     }
 
     get(key: K): V | undefined {
-        this._counter.incr("get");
+        this._counter.incr(OpKind.Get);
 
         const node = this._map.get(key);
         if (!node) return undefined;
@@ -120,13 +104,13 @@ export class LRUMap<K, V> implements IReportor {
         const is_expired =
             this._expire > 0 && (node.val.at + this._expire) <= Date.now();
         if (!is_expired) {
-            this._counter.incr("get_hit");
+            this._counter.incr(OpKind.GetHit);
 
             this.tohead(node);
             return node.val.val;
         }
 
-        this._counter.incr("get_expired");
+        this._counter.incr(OpKind.GetExpired);
 
         this._vals.unlink(node);
         this._map.delete(key);
@@ -134,7 +118,7 @@ export class LRUMap<K, V> implements IReportor {
     }
 
     del(key: K) {
-        this._counter.incr("delete");
+        this._counter.incr(OpKind.Delete);
 
         const node = this._map.get(key);
         if (!node) return;
