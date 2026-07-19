@@ -90,7 +90,7 @@ export async function encodebycls<T>(cls: ClassOf<T>, reqid: number, msg: T): Pr
     return encode(mid, reqid, msg);
 }
 
-export function MkNotFoundErr(msgid: number | string) {
+function MkNotFoundErr(msgid: number | string) {
     return new AppError(ErrorCode.MsgIdNotFound, `decode: ${msgid}, version: ${version()}`);
 }
 

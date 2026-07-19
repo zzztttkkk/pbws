@@ -45,6 +45,8 @@ class MethodInfo<T extends object> {
 
 type PropsMetaMap<T extends object> = Map<string, PropInfo<T>>;
 type MethodsMetaMap<T extends object> = Map<string, MethodInfo<T>>;
+type ReadonlyPropsMetaMap<T extends object> = ReadonlyMap<string, PropInfo<T>>;
+type ReadonlyMethodsMetaMap<T extends object> = ReadonlyMap<string, MethodInfo<T>>;
 
 export class MetaInfo<C extends object, P extends object, M extends object> {
     target: Function;
@@ -81,7 +83,7 @@ export class MetaInfo<C extends object, P extends object, M extends object> {
         return this.scope(this.target)?.cls;
     }
 
-    props(opts?: { readable?: boolean; writable?: boolean; }): PropsMetaMap<P> | null {
+    props(opts?: { readable?: boolean; writable?: boolean; }): ReadonlyPropsMetaMap<P> | null {
         if (this.#_props === undefined) {
             const props: PropsMetaMap<P> = new Map;
 
@@ -110,7 +112,7 @@ export class MetaInfo<C extends object, P extends object, M extends object> {
         return this.#_props
     }
 
-    methods(): MethodsMetaMap<M> | null {
+    methods(): ReadonlyMethodsMetaMap<M> | null {
         if (this.#_methods === undefined) {
             const methods: MethodsMetaMap<M> = new Map;
 
@@ -145,7 +147,7 @@ export type IPropOpts<T extends object> = T & {
 export type IMethodOpts<T extends object> = T & {
     paramtypes?: TypeValue[];
     returntype?: TypeValue;
-    wrap: <F extends Function>(f: F) => F;
+    wrap?: <F extends Function>(f: F) => F;
 };
 
 interface Scope<C extends object, P extends object, M extends object> {
@@ -160,11 +162,15 @@ export class MetaRegister<
     M extends object,
 > {
     public readonly name: symbol;
-    public readonly AllClses: Function[] = [];
+    #all: Function[] = [];
     readonly #metas: Map<Function, MetaInfo<C, P, M>> = new Map();
 
     constructor(name: symbol) {
         this.name = name;
+    }
+
+    public get AllClses(): ReadonlyArray<Function> {
+        return this.#all;
     }
 
     private scope(ctx: DecoratorContext): Scope<C, P, M> {
@@ -180,7 +186,7 @@ export class MetaRegister<
     cls(opts?: C) {
         return (target: Function, ctx: ClassDecoratorContext) => {
             this.scope(ctx).cls = opts;
-            this.AllClses.push(target);
+            this.#all.push(target);
         };
     }
 
@@ -260,7 +266,7 @@ Deno.test("register", () => {
         b() { }
     }
 
-
+    @reg.cls()
     class Y extends X {
         @reg.prop({ designtype: Number })
         public d!: number;

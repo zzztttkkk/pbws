@@ -1,7 +1,6 @@
 import { EmptyResponse } from "./gen.ts";
 import { decode, encodebycls, msginfobyname, version } from "./packet.ts";
 import * as reflection from "./pkgs/reflection/index.ts";
-import { glob } from "node:fs/promises";
 import { AppError, ErrorCode, FailedResponse } from "./errors.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { RwLock } from "./pkgs/sync/index.ts";
@@ -20,19 +19,20 @@ export interface IConnState {
 }
 
 export interface IAppImpls<CS extends IConnState> {
-    globs: string[];
+    globs?: string[];
     auth(req: Request, info: Deno.ServeHandlerInfo): Promise<CS | Error | null>;
 }
 
 export interface IServeProps {
+    label?: string;
     description?: string;
-    output?: reflection.TypeValue;
     readonly?: boolean;
+    tags?: string[];
 }
 
-const reg = new reflection.MetaRegister<unknown, unknown, IServeProps>(Symbol("fv.pkgs.pb.serve"));
+const reg = new reflection.MetaRegister<{}, {}, IServeProps>(Symbol("fv.pkgs.pb.serve"));
 
-export function serve(opts?: IServeProps) { return reg.method(opts); }
+export function serve(opts: Parameters<typeof reg.method>[0]) { return reg.method(opts); }
 
 export class App<CS extends IConnState> {
     private config!: AppConfig;
@@ -75,11 +75,9 @@ export class App<CS extends IConnState> {
     }
 
     private async load() {
-        await globimport(this.impl.globs);
+        await globimport(this.impl.globs ?? []);
 
-        const clses = reflection.AllClasses(reg);
-
-        for (const cls of clses) {
+        for (const cls of reg.AllClses) {
             const meta = reflection.metainfo(reg, cls);
             const methods = meta.methods();
             if (!methods) continue;
@@ -93,22 +91,22 @@ export class App<CS extends IConnState> {
                 if (typeof input_type !== "function") {
                     throw new Error(`${cls.name}.${name}'s input type must be function`);
                 }
-                const i = msginfobyname(input_type.name);
-                if (!i) throw new Error(`${name} not found`);
-                if (i.opts?.kind !== "request") throw new Error(`${cls.name}.${name}'s input type must be request`);
+                const inputinfo = msginfobyname(input_type.name);
+                if (!inputinfo) throw new Error(`${name} not found`);
+                if (inputinfo.opts?.kind !== "request") throw new Error(`${cls.name}.${name}'s input type must be request`);
 
-                const output_type = method.opts?.output || EmptyResponse;
+                const output_type = method.returntype || EmptyResponse;
                 if (typeof output_type !== "function") {
                     throw new Error(`${cls.name}.${name}'s output type must be function`);
                 }
-                const o = msginfobyname(output_type.name);
-                if (!o) throw new Error(`${cls.name}.${name}'s output type not found`);
-                if (o.opts?.kind !== "response") throw new Error(`${cls.name}.${name}'s output type must be response`);
+                const outputinfo = msginfobyname(output_type.name);
+                if (!outputinfo) throw new Error(`${cls.name}.${name}'s output type not found`);
+                if (outputinfo.opts?.kind !== "response") throw new Error(`${cls.name}.${name}'s output type must be response`);
 
-                if (this.services.has(i.id)) {
+                if (this.services.has(inputinfo.id)) {
                     throw new Error(`${cls.name}.${name}'s input type already registered`);
                 }
-                this.services.set(i.id, { fnc: async (v: any) => ins[name](v), opts: method.opts });
+                this.services.set(inputinfo.id, { fnc: async (v: any) => ins[name](v), opts: method.opts });
             }
         }
     }

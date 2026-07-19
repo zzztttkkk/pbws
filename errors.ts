@@ -1,4 +1,4 @@
-import { field, msg } from "./gen.ts";
+import { errcodes, field, msg } from "./gen.ts";
 
 export class AppError extends Error {
     code: number;
@@ -44,3 +44,5 @@ export enum ErrorCode {
 
     InternalError = 400,
 }
+
+errcodes(ErrorCode);
