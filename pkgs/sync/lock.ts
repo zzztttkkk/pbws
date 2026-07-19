@@ -1,5 +1,5 @@
 import { inspect } from "node:util";
-import { Queue } from "./stack.ts";
+import { List } from "../internal/list.ts";
 
 type Waiter = () => void;
 
@@ -7,15 +7,17 @@ export class LockError extends Error { };
 
 export class Lock {
 	private locked = false;
-	private readonly waiters: Queue<Waiter>;
+	private readonly waiters: List<Waiter>;
 
 	constructor() {
-		this.waiters = new Queue();
+		this.waiters = new List();
 	}
 
 	async acquire(): Promise<{ [Symbol.dispose]: () => void }> {
 		if (this.locked) {
-			await new Promise<void>((resolve) => this.waiters.push(resolve));
+			await new Promise<void>((resolve) => {
+				this.waiters.pushr(this.waiters.mknode(resolve));
+			});
 		} else {
 			this.locked = true;
 		}
@@ -31,11 +33,11 @@ export class Lock {
 			this.locked = false;
 			return;
 		}
-		this.waiters.pop()();
+		this.waiters.popl().val();
 	}
 
 	[inspect.custom]() {
-		return `[Lock locked: ${this.locked}, waiters: ${this.waiters.depth}]`;
+		return `[Lock locked: ${this.locked}, waiters: ${this.waiters.size}]`;
 	}
 
 	async exec<T>(ps: (() => Promise<T>)): Promise<T> {

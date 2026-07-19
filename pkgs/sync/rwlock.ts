@@ -1,5 +1,5 @@
 import { inspect } from "node:util";
-import { Queue } from "./stack.ts";
+import { List } from "../internal/list.ts";
 import { Lock } from "./lock.ts";
 
 interface Waiter {
@@ -23,15 +23,15 @@ export class RwLock {
 	private readonly lock: Lock;
 	private writing = false;
 	private readings = 0;
-	private readonly waiters: Queue<Waiter>;
+	private readonly waiters: List<Waiter>;
 
 	constructor() {
 		this.lock = new Lock();
-		this.waiters = new Queue();
+		this.waiters = new List();
 	}
 
 	[inspect.custom]() {
-		return `[RwLock w: ${this.writing}, r: ${this.readings}, waiters: ${this.waiters.depth
+		return `[RwLock w: ${this.writing}, r: ${this.readings}, waiters: ${this.waiters.size
 			}, internal: ${inspect(this.lock)}]`;
 	}
 
@@ -42,16 +42,16 @@ export class RwLock {
 				this.writing = false;
 				return;
 			}
-			const top = this.waiters.peek();
+			const top = this.waiters.peekl();
 			if (top.w) {
 				// because this loop can make multi reads once
 				if (this.readings > 0) return;
-				this.waiters.pop();
+				this.waiters.popl();
 				this.writing = true;
 				top.resolve();
 				return;
 			}
-			this.waiters.pop();
+			this.waiters.popl();
 			this.writing = false;
 			this.readings++;
 			top.resolve();
@@ -66,17 +66,17 @@ export class RwLock {
 			return;
 		}
 
-		if (this.waiters.peek().w) {
+		if (this.waiters.peekl().w) {
 			this.readings--;
 			if (this.readings < 1) {
 				this.writing = true;
-				this.waiters.pop().resolve();
+				this.waiters.popl().val.resolve();
 			}
 			return;
 		}
 
 		// read count does not changed
-		this.waiters.pop().resolve();
+		this.waiters.popl().val.resolve();
 	}
 
 	async acquirew(): Promise<ReleaseHandle> {
@@ -84,7 +84,7 @@ export class RwLock {
 
 		if (this.writing || this.readings) {
 			await new Promise<void>((resolve) => {
-				this.waiters.push({ resolve, w: true });
+				this.waiters.pushr(this.waiters.mknode({ resolve, w: true }));
 			});
 		} else {
 			this.writing = true;
@@ -95,9 +95,9 @@ export class RwLock {
 	async acquirer(): Promise<ReleaseHandle> {
 		using _ = await this.lock.acquire();
 
-		if (this.writing || this.waiters.peek()?.w) {
+		if (this.writing || this.waiters.peekl()?.w) {
 			await new Promise<void>((resolve) => {
-				this.waiters.push({ resolve, w: false });
+				this.waiters.pushr(this.waiters.mknode({ resolve, w: false }));
 			});
 		} else {
 			this.readings++;
