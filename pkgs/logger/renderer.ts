@@ -1,5 +1,6 @@
 import type { Item } from "./item.ts";
 import dayjs from "dayjs";
+import * as colors from "@std/fmt/colors";
 
 export interface LineRenderer {
 	render(item: Item): string;
@@ -7,42 +8,80 @@ export interface LineRenderer {
 
 const LevelStrings = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
 
+interface Theme {
+	meta: (v: string) => string;
+	level: (v: string) => string;
+	time: (v: string) => string;
+	msg: (v: string) => string;
+	args: (v: string) => string;
+}
+
+
+const themes: Theme[] = [
+	{ meta: colors.white, level: colors.gray, time: colors.white, msg: colors.gray, args: colors.white }, // TRACE
+	{ meta: colors.white, level: colors.blue, time: colors.white, msg: colors.white, args: colors.white }, // DEBUG
+	{ meta: colors.white, level: colors.green, time: colors.white, msg: colors.white, args: colors.white }, // INFO
+	{ meta: colors.white, level: colors.yellow, time: colors.white, msg: colors.yellow, args: colors.white }, // WARN
+	{ meta: colors.white, level: colors.red, time: colors.white, msg: colors.red, args: colors.white }, // ERROR
+];
+
 export class SimpleLineRenderer implements LineRenderer {
 	private _render_fn: (item: Item) => string;
 
-	constructor(timelayout?: string) {
-		if (timelayout) {
+	static buildmeta(item: Item) {
+		if (item.meta) {
+			const metabuf = [] as string[];
+			for (const [k, v] of Object.entries(item.meta)) {
+				metabuf.push(`${k}=${JSON.stringify(v)}`);
+			}
+			return ` [${metabuf.join("; ")}]`;
+		}
+		return "";
+	}
+
+	static buildargs(item: Item) {
+		if (item.args && item.args.length > 0) {
+			return ` ${JSON.stringify(item.args)}`;
+		}
+		return "";
+	}
+
+	constructor(opts?: { timelayout?: string; colorful?: boolean }) {
+		if (opts?.timelayout) {
 			this._render_fn = (item: Item) => {
-				let meta = "";
-				if (item.meta) {
-					const metabuf = [] as string[];
-					for (const [k, v] of Object.entries(item.meta)) {
-						metabuf.push(`${k}=${JSON.stringify(v)}`);
-					}
-					meta = ` [${metabuf.join("; ")}]`;
+				const theme = themes[item.level];
+
+				let meta = SimpleLineRenderer.buildmeta(item);
+				let args = SimpleLineRenderer.buildargs(item);
+				let time = dayjs(item.at).format(opts!.timelayout!);
+				let level = LevelStrings[item.level];
+				let msg = item.msg;
+				if (opts?.colorful) {
+					meta = theme.meta(meta);
+					level = theme.level(level);
+					msg = theme.msg(msg);
+					args = theme.args(args);
+					time = theme.time(time);
 				}
-				let args = "";
-				if (item.args && item.args.length > 0) {
-					args = ` ${JSON.stringify(item.args)}`;
-				}
-				return `[${dayjs(item.at).format(timelayout)}] [${LevelStrings[item.level]}]${meta} ${item.msg};${args}\n`;
+				return `[${time}] [${level}]${meta} ${msg};${args}\n`;
 			};
 		} else {
 			this._render_fn = (item: Item) => {
-				let meta = "";
-				if (item.meta) {
-					const metabuf = [] as string[];
-					for (const [k, v] of Object.entries(item.meta)) {
-						metabuf.push(`${k}=${JSON.stringify(v)}`)
-					}
-					meta = ` [${metabuf.join("; ")}]`;
+				const theme = themes[item.level];
+
+				let meta = SimpleLineRenderer.buildmeta(item);
+				let args = SimpleLineRenderer.buildargs(item);
+				let time = `${item.at}`;
+				let level = LevelStrings[item.level];
+				let msg = item.msg;
+				if (opts?.colorful) {
+					meta = theme.meta(meta);
+					level = theme.level(level);
+					msg = theme.msg(msg);
+					args = theme.args(args);
+					time = theme.time(time);
 				}
-				let args = "";
-				if (item.args && item.args.length > 0) {
-					args = ` ${JSON.stringify(item.args)}`;
-				}
-				return `[${item.at}] [${LevelStrings[item.level]}]${meta} ${item.msg
-					}; ${args}\n`;
+				return `[${time}] [${level}]${meta} ${msg};${args}\n`;
 			};
 		}
 	}
@@ -55,7 +94,7 @@ export class SimpleLineRenderer implements LineRenderer {
 export class JSONLRenderer implements LineRenderer {
 	private _render_fn: (item: Item) => string;
 
-	constructor(opts?: { timelayout?: string; rawlevel?: boolean }) {
+	constructor(opts?: { timelayout?: string; }) {
 		if (opts?.timelayout) {
 			this._render_fn = (item: Item) => {
 				return JSON.stringify({
@@ -66,17 +105,6 @@ export class JSONLRenderer implements LineRenderer {
 		} else {
 			this._render_fn = (item: Item) => JSON.stringify(item) + "\n";
 		}
-
-		if (!opts?.rawlevel) {
-			const fn = this._render_fn;
-			this._render_fn = (item: Item) => {
-				const ele = { ...item, level: LevelStrings[item.level] };
-				return fn(ele as any);
-			};
-		}
-
-
-
 	}
 
 	render(item: Item): string {

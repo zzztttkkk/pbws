@@ -5,6 +5,7 @@ import { AbsLogger, logger as make, With } from "./pkgs/logger/logger.ts";
 import path from "node:path";
 import { JSONLRenderer, LineRenderer, SimpleLineRenderer } from "./pkgs/logger/renderer.ts";
 import "./pkgs/internal/process.ts";
+import fs from "node:fs/promises";
 
 interface ILoggingConifg {
     minlevel?: Level;
@@ -15,37 +16,47 @@ interface ILoggingConifg {
 
     // enable file logging
     dir?: string;
+    mode?: number;
     name?: string;
     rotate?: RotationKind;
     bufsize?: number;
     noconsole?: boolean;
+    colorful?: boolean;
 }
 
 let defaultlogger: AbsLogger | null = null;
 
-export function init(cfg?: ILoggingConifg) {
+export async function init(cfg?: ILoggingConifg) {
     cfg = cfg ?? {};
     cfg.minlevel ??= Level.Trace;
     cfg.fmt ??= "simple";
 
     const ca = new ConsoleAppender();
 
-    const appenders = [] as Appender[];
+    const appenders = new Array<Appender>(Level.Error + 1);
     if (cfg.dir) {
-        const name = cfg.name || "pbws";
-        for (let i = cfg.minlevel; i <= Level.Error; i++) {
-            let la: Appender = new AsyncFileAppender(path.join(cfg.dir, `${name}.${Level[i].toLowerCase()}.log`), { rotation: cfg.rotate, bufsize: cfg.bufsize });
-            if (!cfg.noconsole) {
-                la = combine(ca, la);
-            }
-            appenders.push(la);
+        const dir = path.resolve(cfg.dir);
+
+        await fs.mkdir(dir, { recursive: true, mode: cfg.mode ?? 0o755 });
+
+        const name = path.basename(cfg.name || "pbws");
+
+        let normalappender: Appender = new AsyncFileAppender(path.join(dir, `${name}.log`), { rotation: cfg.rotate, bufsize: cfg.bufsize });
+        let errorappender: Appender = new AsyncFileAppender(path.join(dir, `${name}.error.log`), { rotation: cfg.rotate, bufsize: cfg.bufsize });
+        if (!cfg.noconsole) {
+            normalappender = combine(ca, normalappender);
+            errorappender = combine(ca, errorappender);
         }
+        appenders.fill(normalappender);
+        appenders[Level.Error] = errorappender;
     } else {
-        for (let i = cfg.minlevel; i <= Level.Error; i++) {
-            appenders.push(ca);
-        }
+        appenders.fill(ca);
     }
-    const fmt: LineRenderer = cfg.fmt === "json" ? new JSONLRenderer : new SimpleLineRenderer;
+    const fmt: LineRenderer = cfg.fmt === "json"
+        ?
+        new JSONLRenderer({ timelayout: cfg.timelayout })
+        :
+        new SimpleLineRenderer({ timelayout: cfg.timelayout, colorful: cfg.colorful });
 
     defaultlogger = make((item) => {
         if (item.level < cfg.minlevel!) return;
@@ -68,8 +79,8 @@ declare global {
     var logger: AbsLogger & { scope: typeof With };
 }
 
-Deno.test("logger.simple", () => {
-    init({});
+Deno.test("logger.simple", async () => {
+    await init({});
 
     logger.info("hello world");
 
@@ -79,7 +90,7 @@ Deno.test("logger.simple", () => {
 });
 
 Deno.test("logger.file", async () => {
-    init({ dir: "./logs", fmt: "json", timelayout: "YYYY-MM-DD HH:mm:ss.SSS" });
+    await init({ dir: "./logs", fmt: "json", timelayout: "YYYY-MM-DD HH:mm:ss.SSS" });
 
     logger.info("hello world");
 

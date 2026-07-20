@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { FileHandle } from "node:fs/promises";
 import type { Appender } from "./appender.ts";
@@ -80,15 +80,15 @@ export class AsyncFileAppender implements Appender {
 		let dv = "";
 		switch (this.rotation) {
 			case "daily": {
-				dv = dayjs(this.rotationbeginat).format("YYYYMMdd");
+				dv = dayjs(this.rotationbeginat).format("YYYYMMDD");
 				break;
 			}
 			case "hourly": {
-				dv = dayjs(this.rotationbeginat).format("YYYYMMddHH");
+				dv = dayjs(this.rotationbeginat).format("YYYYMMDDHH");
 				break;
 			}
 			case "minutely": {
-				dv = dayjs(this.rotationbeginat).format("YYYYMMddHHmm");
+				dv = dayjs(this.rotationbeginat).format("YYYYMMDDHHmm");
 				break;
 			}
 			default: {
@@ -98,7 +98,7 @@ export class AsyncFileAppender implements Appender {
 
 		const filename = `${this.dir}/${this.filename}.${dv}${this.ext}`;
 		try {
-			await fs.promises.rename(this.fp, filename);
+			await fs.rename(this.fp, filename);
 			// deno-lint-ignore no-empty
 		} catch { }
 
@@ -112,7 +112,7 @@ export class AsyncFileAppender implements Appender {
 	private async flush() {
 		if (this.buf.length === 0) return;
 		if (this.fd == null) {
-			this.fd = await fs.promises.open(this.fp, "a+");
+			this.fd = await fs.open(this.fp, "a+");
 		}
 
 		if (this.buf.length <= 64) {
@@ -120,7 +120,6 @@ export class AsyncFileAppender implements Appender {
 		} else {
 			await this.fd.write(Buffer.concat(this.buf, this.currentbufsize));
 		}
-
 		this.buf.length = 0;
 		this.currentbufsize = 0;
 	}
