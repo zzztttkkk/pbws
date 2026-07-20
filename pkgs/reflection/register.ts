@@ -80,7 +80,7 @@ export class MetaInfo<C extends object, P extends object, M extends object> {
     }
 
     cls(): C | undefined {
-        return this.scope(this.target)?.cls;
+        return this.scope(this.target)?.clses.get(this.target);
     }
 
     props(opts?: { readable?: boolean; writable?: boolean; }): ReadonlyPropsMetaMap<P> | null {
@@ -151,7 +151,7 @@ export type IMethodOpts<T extends object> = T & {
 };
 
 interface Scope<C extends object, P extends object, M extends object> {
-    cls: C | undefined;
+    clses: Map<Function, C | undefined>;
     props: PropsMetaMap<P>;
     methods: MethodsMetaMap<M>;
 }
@@ -175,7 +175,7 @@ export class MetaRegister<
 
     private scope(ctx: DecoratorContext): Scope<C, P, M> {
         const sobj: Scope<C, P, M> = (ctx.metadata[this.name] as Scope<C, P, M> | undefined) || {
-            cls: undefined,
+            clses: new Map,
             props: new Map,
             methods: new Map,
         };
@@ -185,7 +185,7 @@ export class MetaRegister<
 
     cls(opts?: C) {
         return (target: Function, ctx: ClassDecoratorContext) => {
-            this.scope(ctx).cls = opts;
+            this.scope(ctx).clses.set(target, opts);
             this.#all.push(target);
         };
     }
@@ -224,14 +224,17 @@ export class MetaRegister<
         };
     }
 
-    method(opts?: IMethodOpts<M>) {
+    method(opts?: IMethodOpts<M>, cb?: (target: Function, ctx: ClassMethodDecoratorContext, info: MethodInfo<M>) => any) {
         return (target: Function, ctx: ClassMethodDecoratorContext) => {
             if (typeof ctx.name == "symbol") {
                 throw new Error("decorator can not be used on a symbol");
             }
 
+            const info = new MethodInfo(opts);
+            if (cb) cb(target, ctx, info);
+
             const methods = this.scope(ctx).methods;
-            methods.set(ctx.name, new MethodInfo(opts));
+            methods.set(ctx.name, info);
 
             if (opts?.wrap) {
                 const wraped = opts.wrap(target);
@@ -250,9 +253,9 @@ export class MetaRegister<
 }
 
 Deno.test("register", () => {
-    const reg = new MetaRegister<{}, {}, {}>(Symbol("test"));
+    const reg = new MetaRegister<{ label?: string }, {}, {}>(Symbol("test"));
 
-    @reg.cls()
+    @reg.cls({ label: "xxx" })
     class X {
         @reg.prop()
         public a!: number;
@@ -266,7 +269,7 @@ Deno.test("register", () => {
         b() { }
     }
 
-    @reg.cls()
+    @reg.cls({ label: "yyy" })
     class Y extends X {
         @reg.prop({ designtype: Number })
         public d!: number;

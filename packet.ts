@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import pbjs from "protobufjs/minimal.js";
-import { fileURLToPath } from "node:url";
 import { IMessageOptions } from "./gen.ts";
 import { unzip, zip } from "./zip.ts";
 import { AppError, ErrorCode } from "./errors.ts";
@@ -32,14 +31,13 @@ export function msginfobyid(id: number): { id: number, opts?: IMessageOptions } 
     return msginfobyname(info.cls.name);
 }
 
-export async function init(dir: string, filename: string) {
+export async function init(filename: string) {
     if (!filename.endsWith(".proto")) {
         throw new Error("filename must end with .proto");
     }
 
-    root = await import(fileURLToPath(`file://${dir}/${filename}.js`));
-
-    meta = JSON.parse(readFileSync(`${dir}/${filename}.meta.json`, "utf-8"));
+    root = await import(`file://${filename}.js`);
+    meta = JSON.parse(readFileSync(`${filename}.meta.json`, "utf-8"));
 
     for (const [name, info] of Object.entries(meta!.ids)) {
         const cls = root![name];

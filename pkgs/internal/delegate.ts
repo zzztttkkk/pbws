@@ -16,6 +16,11 @@ class DelegateCls<T extends Function> {
         return this.val;
     }
 
+    set fn(val: T) {
+        if (this.val) throw new Error(`[Delegate ${this.name}] already settled`);
+        this.val = val;
+    }
+
     get inject() {
         return (target: T, ctx: ClassMethodDecoratorContext) => {
             if (this.val) throw new Error(`[Delegate ${this.name}] already settled`);

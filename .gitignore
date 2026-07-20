@@ -11,3 +11,5 @@ coverage/
 *.lcov
 
 /logs
+/testpbs
+/node_modules

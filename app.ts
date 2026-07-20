@@ -1,11 +1,10 @@
-import { EmptyResponse } from "./gen.ts";
-import { decode, encodebycls, msginfobyname, version } from "./packet.ts";
-import * as reflection from "./pkgs/reflection/index.ts";
+import { decode, encodebycls, version } from "./packet.ts";
 import { AppError, ErrorCode, FailedResponse } from "./errors.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { RwLock } from "./pkgs/sync/index.ts";
 import { entry_state, globimport } from "./internal.ts";
-import { Counter, IReportor, reportor, Config as ReportorConfig } from "./pkgs/internal/reportor.ts";
+import { Counter, IReportor, reportor } from "./pkgs/internal/reportor.ts";
+import { load } from "./services.ts";
 
 export class AppConfig {
     hostname?: string;
@@ -24,17 +23,6 @@ export interface IAppImpls<CS extends IConnState> {
     auth(req: Request, info: Deno.ServeHandlerInfo): Promise<CS | Error | null>;
 }
 
-export interface IServeProps {
-    label?: string;
-    description?: string;
-    readonly?: boolean;
-    tags?: string[];
-}
-
-const reg = new reflection.MetaRegister<{}, {}, IServeProps>(Symbol("fv.pkgs.pb.serve"));
-
-export function serve(opts: Parameters<typeof reg.method>[0]) { return reg.method(opts); }
-
 enum AppCountKind {
     AuthFailed,
     ServeFailed,
@@ -46,7 +34,7 @@ export class App<CS extends IConnState> implements IReportor {
     private config!: AppConfig;
     private impl!: IAppImpls<CS>;
 
-    private services: Map<number, { fnc: (v: any) => Promise<any>; opts?: IServeProps; name: string; }> = new Map;
+    private services: Awaited<ReturnType<typeof load>> | null = null;
     private connections: Map<string, Connection<CS>> = new Map;
     private counter = new Counter(AppCountKind, true);
 
@@ -93,39 +81,7 @@ export class App<CS extends IConnState> implements IReportor {
 
     private async load() {
         await globimport(this.impl.globs ?? []);
-
-        for (const cls of reg.AllClses) {
-            const meta = reflection.metainfo(reg, cls);
-            const methods = meta.methods();
-            if (!methods) continue;
-            const ins = new (cls as { new(): any })();
-            for (const [name, method] of methods) {
-                if (!method.paramtypes || method.paramtypes.length != 1) {
-                    throw new Error(`${cls.name}.${name} must have only one param`);
-                }
-                const input_type = method.paramtypes[0];
-                if (!input_type) throw new Error(`${cls.name}.${name}'s input type not found`);
-                if (typeof input_type !== "function") {
-                    throw new Error(`${cls.name}.${name}'s input type must be function`);
-                }
-                const inputinfo = msginfobyname(input_type.name);
-                if (!inputinfo) throw new Error(`${name} not found`);
-                if (inputinfo.opts?.kind !== "request") throw new Error(`${cls.name}.${name}'s input type must be request`);
-
-                const output_type = method.returntype || EmptyResponse;
-                if (typeof output_type !== "function") {
-                    throw new Error(`${cls.name}.${name}'s output type must be function`);
-                }
-                const outputinfo = msginfobyname(output_type.name);
-                if (!outputinfo) throw new Error(`${cls.name}.${name}'s output type not found`);
-                if (outputinfo.opts?.kind !== "response") throw new Error(`${cls.name}.${name}'s output type must be response`);
-
-                if (this.services.has(inputinfo.id)) {
-                    throw new Error(`${cls.name}.${name}'s input type already registered`);
-                }
-                this.services.set(inputinfo.id, { fnc: async (v: any) => ins[name](v), opts: method.opts, name: `${cls.name}.${name}` });
-            }
-        }
+        this.services = await load();
     }
 
     async run(path: string, opts?: { httphandler?: Deno.ServeHandler<Deno.NetAddr>; }) {
@@ -175,7 +131,7 @@ export class App<CS extends IConnState> implements IReportor {
                         this.connections.delete(state.id);
                     },
                     onmsg: ({ msgid, reqid, msg }) => {
-                        const handle = this.services.get(msgid);
+                        const handle = this.services!.get(msgid);
                         if (!handle) {
                             return conn.fail(reqid, ErrorCode.MsgIdNotFound, { msg: `handle notfound, ${msgid} version: ${version()}` });
                         }

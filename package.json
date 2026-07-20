@@ -1,0 +1,18 @@
+{
+  "name": "pbws",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.11.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "dependencies": {
+    "dayjs": "^1.11.21",
+    "protobufjs": "^8.7.1"
+  },
+  "devDependencies": {
+    "protobufjs-cli": "^2.6.1"
+  }
+}

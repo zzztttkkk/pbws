@@ -1,4 +1,8 @@
-import { errcodes, field, msg } from "./gen.ts";
+import { errcodes } from "./gen.ts";
+import { Delegate } from "./pkgs/internal/delegate.ts";
+import type { FailedResponse } from "./gen.ts";
+
+export const FailedResponseConstructor = Delegate<() => FailedResponse>(import.meta, "FailedResponse");
 
 export class AppError extends Error {
     code: number;
@@ -11,7 +15,7 @@ export class AppError extends Error {
     }
 
     toresp() {
-        const resp = new FailedResponse;
+        const resp = FailedResponseConstructor.fn();
         resp.code = this.code;
         resp.message = this.message;
         resp.meta = this.meta;
@@ -19,22 +23,8 @@ export class AppError extends Error {
     }
 }
 
-@msg({ kind: "response" })
-export class FailedResponse {
-    @field()
-    code!: number;
-
-    @field({ nullable: true })
-    message?: string;
-
-    @field({ nullable: true, description: "In most cases, this is a json" })
-    meta?: string;
-}
-
-FailedResponse;
-
-
 export enum ErrorCode {
+    None = 0,
     AuthFailed = 1,
 
     MsgIdNotFound = 200,
@@ -45,4 +35,3 @@ export enum ErrorCode {
     InternalError = 400,
 }
 
-errcodes(ErrorCode);

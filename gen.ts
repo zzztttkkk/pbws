@@ -1,10 +1,16 @@
-import { createHash } from "node:crypto";
-import * as reflection from "./pkgs/reflection/index.ts";
-import * as fs from "node:fs";
 import { execSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import * as fs from "node:fs";
+import path from "node:path";
+import { ErrorCode, FailedResponseConstructor } from "./errors.ts";
 import { entry_state, globimport } from "./internal.ts";
+import { init } from "./packet.ts";
+import * as reflection from "./pkgs/reflection/index.ts";
+import * as services from "./services.ts";
 
-export type MsgKind = "data" | "request" | "response" | "notify";
+const msgkinds = ["data", "request", "response", "notify"] as const;
+
+export type MsgKind = (typeof msgkinds)[number];
 
 export interface IMessageOptions {
     label?: string;
@@ -23,9 +29,9 @@ export interface IPropsOptions {
 
 const reg = new reflection.MetaRegister<IMessageOptions, IPropsOptions, {}>(Symbol("fv.pkgs.pb"));
 
-export function msg(opts?: IMessageOptions) { return reg.cls(opts); }
+export function msg(opts?: Parameters<typeof reg.cls>[0]) { return reg.cls(opts); }
 
-export function field(opts?: IPropsOptions) { return reg.prop(opts); }
+export function field(opts?: Parameters<typeof reg.prop>[0]) { return reg.prop(opts); }
 
 const alltypes = new Set<Function>();
 const metas = [] as reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>[];
@@ -34,6 +40,10 @@ let idseq = 0;
 const msgidmap: Record<string, { id: number, opts?: IMessageOptions }> = {};
 
 export async function gen(dest: string, opts?: { packages?: string[]; filter?: (v: Function) => boolean; globs?: string[] }) {
+    if (!dest.endsWith(".proto")) {
+        dest += ".proto";
+    }
+    dest = path.resolve(dest);
     if (entry_state.app_instantiated) {
         throw new Error("Cannot run gen() after App has been instantiated. Please execute gen() in a standalone script.");
     }
@@ -50,7 +60,14 @@ export async function gen(dest: string, opts?: { packages?: string[]; filter?: (
         collect(cls);
     }
 
-    metas.sort((a, b) => a.target.name.localeCompare(b.target.name));
+    metas.sort((a, b) => {
+        const akind = a.cls()?.kind || "data";
+        const bkind = b.cls()?.kind || "data";
+        if (akind !== bkind) {
+            return msgkinds.indexOf(akind) - msgkinds.indexOf(bkind);
+        }
+        return a.target.name.localeCompare(b.target.name);
+    });
 
     const buf = [
         `syntax = "proto3";`,
@@ -65,8 +82,14 @@ export async function gen(dest: string, opts?: { packages?: string[]; filter?: (
         buf.push(`}\n`);
     }
 
+    let kind: MsgKind | null = null;
     for (const meta of metas) {
         if (opts?.filter && !opts.filter(meta.target)) continue;
+        const k = meta.cls()?.kind || "data";
+        if (k !== kind) {
+            kind = k;
+            buf.push(`\n// ---------- ${k.toUpperCase()} ----------\n\n`);
+        }
         one_type(meta, buf);
     }
 
@@ -77,8 +100,17 @@ export async function gen(dest: string, opts?: { packages?: string[]; filter?: (
     fs.writeFileSync(dest, content);
     fs.writeFileSync(`${dest}.meta.json`, JSON.stringify({ version, ids: msgidmap, at: Date.now() }, null, 2));
 
+    try {
+        execSync(`pnpm init`);
+        // deno-lint-ignore no-empty
+    } catch { }
+    execSync(`pnpm add -D protobufjs-cli`);
     const cmd = `pnpm exec pbjs ${dest} -t static-module --wrap esm -es6 -d -o ${dest}.js`;
     execSync(cmd);
+
+    await init(dest);
+    await services.gen(buf);
+    fs.writeFileSync(dest, buf.join('\n'));
 }
 
 @msg({ kind: "response" })
@@ -86,19 +118,33 @@ export class EmptyResponse { }
 
 @msg({ kind: "notify" })
 export class PingNotify {
-    @field()
+    @field({ designtype: Number, numkind: "int32" })
     at!: number;
 
-    @field()
+    @field({ designtype: String })
     token!: string;
 
-    @field()
+    @field({ designtype: String })
     hash!: string;
 }
 
+@msg({ kind: "response" })
+export class FailedResponse {
+    @field({ numkind: "int32", designtype: Number })
+    code!: number;
+
+    @field({ nullable: true, designtype: String })
+    message?: string;
+
+    @field({ nullable: true, description: "In most cases, this is a json", designtype: String })
+    meta?: string;
+}
+
+FailedResponseConstructor.fn = () => new FailedResponse;
+
+FailedResponse;
 EmptyResponse;
 PingNotify;
-
 
 function collect(cls: Function) {
     switch (cls) {
@@ -118,9 +164,8 @@ function collect(cls: Function) {
     metas.push(meta);
 
     const props = meta.props();
-    if (!props || props.size < 1) {
-        return;
-    }
+    if (!props || props.size < 1) return;
+
     for (const [pname, prop] of props) {
         if (!prop.designtype) {
             throw new Error(`prop ${cls.name}.${pname} has no design type`);
@@ -161,8 +206,10 @@ function one_type(meta: reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>,
         idseq++;
         msgidmap[name] = { id: idseq, opts: clsopts };
     }
-    const kind = `kind: ${opt_kind}`;
-    desc = desc ? `${kind}\n${desc}` : `${kind}`;
+    desc = [
+        `ANCHOR[id=${name}]${clsopts?.label ? ` ${clsopts.label}` : ""}`,
+        desc,
+    ].join("\n");
 
     push_desc(desc, "", buf);
     buf.push(`message ${name} {`);
@@ -245,3 +292,54 @@ export function errcodes(...enumvs: Record<string, number | string>[]) {
         }
     }
 }
+
+errcodes(ErrorCode);
+
+Deno.test("gen", async () => {
+    class Position {
+        @field({ designtype: Number, numkind: "int32" })
+        x: number;
+        @field({ designtype: Number, numkind: "int32" })
+        y: number;
+
+        constructor(x: number, y: number) {
+            this.x = x;
+            this.y = y;
+        }
+    }
+
+    class CommonMove {
+        @field({ designtype: Position })
+        pos: Position;
+        constructor(pos: Position) {
+            this.pos = pos;
+        }
+    }
+
+    @msg({ kind: "request" })
+    class MoveReq extends CommonMove {
+    }
+
+    @msg({ kind: "response", label: "0.0" })
+    class MoveResp extends CommonMove {
+    }
+
+    class PlayerService {
+        @services.serve({
+            paramtypes: [MoveReq],
+            returntype: MoveResp,
+            description: `asdasdasd
+asdasdasd
+asdasdasdasd            
+`,
+            label: "move",
+            readonly: true,
+        })
+        static async move(req: MoveReq) {
+            return new MoveResp(req.pos);
+        }
+    }
+
+    PlayerService;
+    await gen("./testpbs/a.proto");
+});
