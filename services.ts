@@ -34,7 +34,6 @@ export async function load() {
         const meta = reflection.metainfo(reg, cls);
         const methods = meta.methods();
         if (!methods) continue;
-        const ins = new (cls as { new(): any })();
         for (const [name, method] of methods) {
             if (!method.paramtypes || method.paramtypes.length != 1) {
                 throw new Error(`${cls.name}.${name} must have only one param`);
@@ -60,7 +59,7 @@ export async function load() {
                 throw new Error(`${cls.name}.${name}'s input type already registered`);
             }
             services.set(inputinfo.id, {
-                fnc: async (v: any) => ins[name](v),
+                fnc: async (v: any) => cls[name](v),
                 opts: method.opts,
                 name: `${cls.name}.${name}`,
                 input: input_type.name,

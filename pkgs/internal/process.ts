@@ -1,4 +1,4 @@
-type Action = () => void;
+type Action = () => void | Promise<void>;
 
 const BeforeExitActions = [] as Action[];
 

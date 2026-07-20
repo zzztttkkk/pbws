@@ -39,7 +39,7 @@ const metas = [] as reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>[];
 let idseq = 0;
 const msgidmap: Record<string, { id: number, opts?: IMessageOptions }> = {};
 
-export async function gen(dest: string, opts?: { packages?: string[]; filter?: (v: Function) => boolean; globs?: string[] }) {
+export async function gen(dest: string, opts?: { packages?: string[]; filter?: (v: Function) => boolean; importglobs?: string[] }) {
     if (!dest.endsWith(".proto")) {
         dest += ".proto";
     }
@@ -52,8 +52,8 @@ export async function gen(dest: string, opts?: { packages?: string[]; filter?: (
     }
     entry_state.gen_executed = true;
 
-    if (opts?.globs) {
-        await globimport(opts.globs);
+    if (opts?.importglobs) {
+        await globimport(opts.importglobs);
     }
 
     for (const cls of reg.AllClses) {

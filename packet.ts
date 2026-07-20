@@ -79,6 +79,7 @@ export async function encode(msgid: number, reqid: number, msg: any): Promise<Bu
 }
 
 export async function encodebycls<T>(cls: ClassOf<T>, reqid: number, msg: T): Promise<Buffer> {
+    if (!cls) throw new Error("cls is undefined/null");
     let mid = cls[MsgIdKey];
     if (!mid) {
         mid = msginfobyname(cls.name)?.id;

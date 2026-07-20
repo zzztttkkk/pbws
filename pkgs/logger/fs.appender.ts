@@ -34,9 +34,9 @@ export class AsyncFileAppender implements Appender {
 		},
 	) {
 		this.fp = fp;
-		this.bufsize = opts?.bufsize ?? 1024 * 8;
+		this.bufsize = opts?.bufsize ?? 1024 * 64;
 		if (!Number.isSafeInteger(this.bufsize)) {
-			this.bufsize = 1024 * 8;
+			this.bufsize = 1024 * 64;
 		}
 
 		this.rotation = opts?.rotation;
@@ -126,10 +126,11 @@ export class AsyncFileAppender implements Appender {
 	}
 
 	async append(at: number, log: string) {
+		if (this.closed) return;
 		using _ = await this.lock.acquire();
+		if (this.closed) return;
 
 		await this.rotate(at);
-		if (this.closed) return;
 
 		const logbuf = Buffer.from(log);
 		this.buf.push(logbuf);
@@ -140,9 +141,10 @@ export class AsyncFileAppender implements Appender {
 	}
 
 	async close() {
-		using _ = await this.lock.acquire();
-
 		if (this.closed) return;
+		using _ = await this.lock.acquire();
+		if (this.closed) return;
+
 		this.closed = true;
 
 		await this.rotate(Date.now());

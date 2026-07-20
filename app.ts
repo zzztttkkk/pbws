@@ -1,10 +1,11 @@
 import { decode, encodebycls, version } from "./packet.ts";
-import { AppError, ErrorCode, FailedResponse } from "./errors.ts";
+import { AppError, ErrorCode } from "./errors.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { RwLock } from "./pkgs/sync/index.ts";
 import { entry_state, globimport } from "./internal.ts";
 import { Counter, IReportor, reportor } from "./pkgs/internal/reportor.ts";
 import { load } from "./services.ts";
+import { EmptyResponse, FailedResponse } from "./gen.ts";
 
 export class AppConfig {
     hostname?: string;
@@ -52,7 +53,7 @@ export class App<CS extends IConnState> implements IReportor {
 
     report(): string {
         return JSON.stringify({
-            kind: "App",
+            kind: "PBWSApp",
             conns: this.connections.size,
             counter: this.counter,
         });
@@ -155,6 +156,10 @@ export class App<CS extends IConnState> implements IReportor {
                                     }
                                     const buf = await encodebycls(FailedResponse, reqid, msg);
                                     socket.send(buf!);
+                                    return;
+                                }
+                                if (resp == null) {
+                                    socket.send(await encodebycls(EmptyResponse, reqid, new EmptyResponse));
                                     return;
                                 }
                                 if (typeof resp !== "object") {
