@@ -298,11 +298,9 @@ const DenoCustomInspect = Symbol.for("Deno.customInspect");
 
 export class ContainerType {
     public readonly eletype: TypeValue;
-    public readonly bindhint?: any;
 
-    constructor(v: TypeValue, bindhint?: any) {
+    constructor(v: TypeValue) {
         this.eletype = v;
-        this.bindhint = bindhint;
     }
 
     [DenoCustomInspect]() {
@@ -320,16 +318,13 @@ export class SetType extends ContainerType { }
 
 export class MapType extends ContainerType {
     public readonly keytype: TypeValue;
-    public readonly keybindhint?: any;
 
     constructor(
         k: TypeValue,
         v: TypeValue,
-        bindhints?: { key?: any; value?: any },
     ) {
-        super(v, bindhints?.value);
+        super(v);
         this.keytype = k;
-        this.keybindhint = bindhints?.key;
     }
 
     override[DenoCustomInspect]() {
@@ -340,8 +335,7 @@ export class MapType extends ContainerType {
 }
 
 export const containers = {
-    array: (v: TypeValue, bindhint?: any) => new ArrayType(v, bindhint),
-    set: (v: TypeValue, bindhint?: any) => new SetType(v, bindhint),
-    map: (k: TypeValue, v: TypeValue, bindhints?: { key?: any; value?: any }) =>
-        new MapType(k, v, bindhints),
+    array: (v: TypeValue) => new ArrayType(v),
+    set: (v: TypeValue) => new SetType(v),
+    map: (k: TypeValue, v: TypeValue) => new MapType(k, v),
 };

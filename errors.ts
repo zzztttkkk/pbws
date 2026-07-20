@@ -1,8 +1,4 @@
-import { errcodes } from "./gen.ts";
-import { Delegate } from "./pkgs/internal/delegate.ts";
-import type { FailedResponse } from "./gen.ts";
-
-export const FailedResponseConstructor = Delegate<() => FailedResponse>(import.meta, "FailedResponse");
+import { FailedResponseConstructor } from "./internal.ts";
 
 export class AppError extends Error {
     code: number;

@@ -32,7 +32,7 @@ export class SimpleLineRenderer implements LineRenderer {
 		if (item.meta) {
 			const metabuf = [] as string[];
 			for (const [k, v] of Object.entries(item.meta)) {
-				metabuf.push(`${k}=${JSON.stringify(v)}`);
+				metabuf.push(`${k}=${jsonenc(v)}`);
 			}
 			return ` [${metabuf.join("; ")}]`;
 		}
@@ -41,7 +41,7 @@ export class SimpleLineRenderer implements LineRenderer {
 
 	static buildargs(item: Item) {
 		if (item.args && item.args.length > 0) {
-			return ` ${JSON.stringify(item.args)}`;
+			return ` ${jsonenc(item.args)}`;
 		}
 		return "";
 	}
@@ -97,13 +97,13 @@ export class JSONLRenderer implements LineRenderer {
 	constructor(opts?: { timelayout?: string; }) {
 		if (opts?.timelayout) {
 			this._render_fn = (item: Item) => {
-				return JSON.stringify({
+				return jsonencl({
 					...item,
 					at: dayjs(item.at).format(opts!.timelayout!),
-				}) + "\n";
+				});
 			};
 		} else {
-			this._render_fn = (item: Item) => JSON.stringify(item) + "\n";
+			this._render_fn = jsonencl;
 		}
 	}
 
@@ -112,13 +112,29 @@ export class JSONLRenderer implements LineRenderer {
 	}
 }
 
-function jsonl(b: unknown): string {
-	const buf = [] as string[];
-	dojsonl(buf, b, new WeakSet());
-	buf.push("\n");
-	return buf.join("");
+
+function jsonenc(v: any): string {
+	try {
+		return JSON.stringify(v);
+	} catch {
+		return jsonl(v);
+	}
 }
 
+function jsonencl(v: any): string {
+	try {
+		return JSON.stringify(v) + "\n";
+	} catch {
+		return jsonl(v, true);
+	}
+}
+
+function jsonl(b: unknown, line?: boolean): string {
+	const buf = [] as string[];
+	dojsonl(buf, b, new WeakSet());
+	if (line) buf.push("\n");
+	return buf.join("");
+}
 
 function dojsonl(buf: string[], v: unknown, ws: WeakSet<any>) {
 	switch (typeof v) {
@@ -143,10 +159,10 @@ function dojsonl(buf: string[], v: unknown, ws: WeakSet<any>) {
 			}
 
 			if (ws.has(v)) {
-				buf.push("<cycle>");
-				ws.add(v);
+				buf.push(`"[Circular]"`);
 				return;
 			};
+			ws.add(v);
 
 			if (Array.isArray(v)) {
 				jsonl_sized_iter(buf, v, v.length, "[", "]", ws);

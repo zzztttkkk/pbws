@@ -14,8 +14,8 @@ export abstract class AbsLogger {
 
 	public abstract close(): Promise<void>;
 
-	private async log(level: Level, msg: string, ...args: any[]) {
-		if (this._closed) return;
+	private log(level: Level, msg: string, ...args: any[]): Promise<void> {
+		if (this._closed) return Promise.resolve();
 
 		const item: Item = {
 			at: Date.now(),
@@ -25,27 +25,27 @@ export abstract class AbsLogger {
 		};
 		item.meta = MetaStore.getStore();
 		const ra = this.dispatch(item);
-		if (!ra) return;
-		await ra.appender.append(item.at, ra.renderer.render(item));
+		if (!ra) return Promise.resolve();
+		return ra.appender.append(item.at, ra.renderer.render(item));
 	}
 
-	async trace(msg: string, ...args: any[]) {
+	trace(msg: string, ...args: any[]) {
 		return this.log(Level.Trace, msg, ...args);
 	}
 
-	async debug(msg: string, ...args: any[]) {
+	debug(msg: string, ...args: any[]) {
 		return this.log(Level.Debug, msg, ...args);
 	}
 
-	async info(msg: string, ...args: any[]) {
+	info(msg: string, ...args: any[]) {
 		return this.log(Level.Info, msg, ...args);
 	}
 
-	async warn(msg: string, ...args: any[]) {
+	warn(msg: string, ...args: any[]) {
 		return this.log(Level.Warn, msg, ...args);
 	}
 
-	async error(msg: string, ...args: any[]) {
+	error(msg: string, ...args: any[]) {
 		return this.log(Level.Error, msg, ...args);
 	}
 }

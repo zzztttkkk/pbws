@@ -1,11 +1,10 @@
-import { decode, encodebycls, version } from "./packet.ts";
+import { encodebycls, version } from "./packet.ts";
 import { AppError, ErrorCode } from "./errors.ts";
-import { AsyncLocalStorage } from "node:async_hooks";
-import { RwLock } from "./pkgs/sync/index.ts";
 import { entry_state, globimport } from "./internal.ts";
 import { Counter, IReportor, reportor } from "./pkgs/internal/reportor.ts";
 import { load } from "./services.ts";
 import { EmptyResponse, FailedResponse } from "./gen.ts";
+import { Connection } from "./connection.ts";
 
 export class AppConfig {
     hostname?: string;
@@ -29,6 +28,8 @@ enum AppCountKind {
     ServeFailed,
     InternalError,
 }
+
+let conn_seq = 0n;
 
 @reportor
 export class App<CS extends IConnState> implements IReportor {
@@ -70,8 +71,8 @@ export class App<CS extends IConnState> implements IReportor {
         })();
     }
 
-    async notify(obj: object, connids: string[]) {
-        const buf = await encodebycls(obj.constructor as any, 0, obj);
+    async notify<T>(obj: T & { constructor: ClassOf<T> }, connids: string[]) {
+        const buf = await encodebycls(obj.constructor, 0, obj);
         if (!buf) return;
         for (const id of connids) {
             const conn = this.connections.get(id);
@@ -107,9 +108,7 @@ export class App<CS extends IConnState> implements IReportor {
                 try {
                     state = await this.impl.auth(req, info);
                 } catch (e) {
-                    if (!(e instanceof Error)) {
-                        state = new Error(`${Deno.inspect(e)}`);
-                    }
+                    state = e instanceof Error ? e : new Error(`${Deno.inspect(e)}`);
                 }
                 if (state == null) {
                     this.counter.incr(AppCountKind.AuthFailed);
@@ -187,91 +186,5 @@ export class App<CS extends IConnState> implements IReportor {
         if (!this.server) throw new Error(`server not running`);
         this.server.shutdown();
         this.server = null;
-    }
-}
-
-interface IConnectionOpts {
-    onclose: () => void;
-    onmsg: (msg: { msgid: number, reqid: number, msg: any }) => Promise<void>;
-}
-
-const ConnStateStorage = new AsyncLocalStorage<Connection<any>>();
-
-let conn_seq = 0n;
-
-export class Connection<T extends { id: string }> {
-    readonly state!: T;
-    readonly seq: bigint;
-
-    private sock!: WebSocket;
-    private opts!: IConnectionOpts;
-    private closed = false;
-    private readonly lock: RwLock;
-
-    constructor(seq: bigint, ws: WebSocket, cs: T, opts: IConnectionOpts) {
-        this.seq = seq;
-        this.sock = ws;
-        this.state = cs;
-        this.opts = opts;
-        this.lock = new RwLock();
-    }
-
-    setup() {
-        this.sock.binaryType = "arraybuffer";
-
-        this.sock.addEventListener("message", (evt) => {
-            if (this.closed) return;
-            if (typeof evt.data === "string") return;
-
-            const rawmsg = evt.data as ArrayBuffer;
-
-            ConnStateStorage.run(this, async () => {
-                const buf = Buffer.from(rawmsg);
-                try {
-                    await this.opts.onmsg(await decode(buf));
-                } catch (e) {
-                    console.error("fatal error in handling", e);
-                    this.close();
-                }
-            });
-        });
-        this.sock.addEventListener("close", () => {
-            this.closed = true;
-            this.opts.onclose();
-        });
-        this.sock.addEventListener("error", (e) => {
-            console.error(e);
-        });
-    }
-
-    async fail(reqid: number, code: number, opts?: { msg?: string, exts?: any }) {
-        if (this.closed) return;
-        const resp = new AppError(code, opts?.msg, opts?.exts).toresp();
-        this.sock.send(await encodebycls(FailedResponse, reqid, resp));
-    }
-
-    async notify(obj: object) {
-        if (this.closed) return;
-        this.sock.send(await encodebycls(obj.constructor as any, 0, obj));
-    }
-
-    /** @internal */
-    _notifyraw(buf: Buffer) {
-        if (this.closed) return;
-        this.sock.send(buf);
-    }
-
-    close() {
-        if (this.closed) return;
-        this.closed = true;
-        this.sock.close();
-    }
-
-    async _run(fnc: () => Promise<void>, readonly?: boolean) {
-        await using _ = readonly
-            ? await this.lock.acquirer()
-            : await this.lock.acquirew();
-        if (this.closed) return;
-        await fnc();
     }
 }

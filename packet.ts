@@ -22,8 +22,7 @@ const MsgIdKey = Symbol("msgid");
 let root: Record<string, IMsgClass> | undefined;
 let meta: { version: string; at: number; ids: Record<string, { id: number, opts?: IMessageOptions }> } | undefined;
 
-export function version() { return meta!.version; }
-export function at() { return meta!.at; }
+export function version() { return { version: meta!.version, at: meta!.at }; }
 export function msginfobyname(name: string): { id: number, opts?: IMessageOptions } | null { return meta!.ids[name] || null; }
 export function msginfobyid(id: number): { id: number, opts?: IMessageOptions } | null {
     const info = id2cls.get(id);
@@ -31,7 +30,7 @@ export function msginfobyid(id: number): { id: number, opts?: IMessageOptions } 
     return msginfobyname(info.cls.name);
 }
 
-export async function init(filename: string) {
+export async function loadproto(filename: string) {
     if (!filename.endsWith(".proto")) {
         throw new Error("filename must end with .proto");
     }
@@ -51,6 +50,7 @@ export async function init(filename: string) {
 
 enum MessageFlag {
     Compressed = 0b0000_0001,
+    IsJSON = 0b0000_0010, // used for debug
 }
 
 const COMPRESS_THRESHOLD = 2048;
@@ -80,11 +80,11 @@ export async function encode(msgid: number, reqid: number, msg: any): Promise<Bu
 
 export async function encodebycls<T>(cls: ClassOf<T>, reqid: number, msg: T): Promise<Buffer> {
     if (!cls) throw new Error("cls is undefined/null");
-    let mid = cls[MsgIdKey];
+    let mid = (cls as any)[MsgIdKey];
     if (!mid) {
         mid = msginfobyname(cls.name)?.id;
         if (!mid) throw MkNotFoundErr(`${Deno.inspect(cls)}`);
-        cls[MsgIdKey] = mid;
+        (cls as any)[MsgIdKey] = mid;
     }
     return encode(mid, reqid, msg);
 }
@@ -92,6 +92,8 @@ export async function encodebycls<T>(cls: ClassOf<T>, reqid: number, msg: T): Pr
 function MkNotFoundErr(msgid: number | string) {
     return new AppError(ErrorCode.MsgIdNotFound, `decode: ${msgid}, version: ${version()}`);
 }
+
+const AcceptJSONInput = Deno.env.get("PBWS_ACCEPT_JSON_INPUT") === "true";
 
 export async function decode<T>(src: Buffer): Promise<{ msg: T; msgid: number; reqid: number; }> {
     if (src.length < 8) throw new AppError(ErrorCode.MsgDecodeFailed, `packet too short`);
@@ -108,6 +110,10 @@ export async function decode<T>(src: Buffer): Promise<{ msg: T; msgid: number; r
         let payload = src.subarray(8);
         if (flags & MessageFlag.Compressed) {
             payload = await unzip(payload);
+        }
+        if (AcceptJSONInput && (flags & MessageFlag.IsJSON)) {
+            const obj = JSON.parse(payload.toString("utf8"));
+            return { msg: Cls.fromObject(obj), msgid, reqid };
         }
         return { msg: Cls.decode(payload), msgid, reqid };
     } catch (e) {

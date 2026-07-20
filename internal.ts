@@ -13,3 +13,8 @@ export async function globimport(globs: string[]) {
         }
     }
 }
+
+import { type FailedResponse } from "./gen.ts";
+import { Delegate } from "./pkgs/internal/delegate.ts";
+
+export const FailedResponseConstructor = Delegate<() => FailedResponse>(import.meta, "FailedResponse");

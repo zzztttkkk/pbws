@@ -59,7 +59,7 @@ export async function load() {
                 throw new Error(`${cls.name}.${name}'s input type already registered`);
             }
             services.set(inputinfo.id, {
-                fnc: async (v: any) => cls[name](v),
+                fnc: async (v: any) => (cls as any)[name](v),
                 opts: method.opts,
                 name: `${cls.name}.${name}`,
                 input: input_type.name,

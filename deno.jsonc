@@ -7,9 +7,10 @@
     "dayjs": "npm:dayjs@^1.11.21",
     "protobufjs": "npm:protobufjs@^8.7.1",
   },
-  "compilerOptions": {
-    "noImplicitAny": false,
-    "skipLibCheck": true
+  "nodeModulesDir": "auto",
+  "exports": {
+    ".": "./mod.ts",
+    "./logger": "./logger.ts",
   },
   "lint": {
     "rules": {

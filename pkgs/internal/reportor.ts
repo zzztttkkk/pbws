@@ -85,7 +85,7 @@ export class Counter<E extends Record<number, string>> {
     }
 
     toJSON() {
-        const obj = {};
+        const obj = {} as Record<string, string>;
         for (const key of this.keys) {
             obj[key.name] = this.nums[key.idx].toString();
         }

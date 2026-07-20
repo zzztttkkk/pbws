@@ -2,11 +2,12 @@ import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import path from "node:path";
-import { ErrorCode, FailedResponseConstructor } from "./errors.ts";
+import { ErrorCode } from "./errors.ts";
 import { entry_state, globimport } from "./internal.ts";
-import { init } from "./packet.ts";
+import { loadproto } from "./packet.ts";
 import * as reflection from "./pkgs/reflection/index.ts";
 import * as services from "./services.ts";
+import { FailedResponseConstructor } from "./internal.ts";
 
 const msgkinds = ["data", "request", "response", "notify"] as const;
 
@@ -31,7 +32,10 @@ const reg = new reflection.MetaRegister<IMessageOptions, IPropsOptions, {}>(Symb
 
 export function msg(opts?: Parameters<typeof reg.cls>[0]) { return reg.cls(opts); }
 
-export function field(opts?: Parameters<typeof reg.prop>[0]) { return reg.prop(opts); }
+export function field(opts?: Parameters<typeof reg.prop>[0]) {
+    if (opts?.numkind) opts.designtype = Number;
+    return reg.prop(opts);
+}
 
 const alltypes = new Set<Function>();
 const metas = [] as reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>[];
@@ -108,7 +112,7 @@ export async function gen(dest: string, opts?: { packages?: string[]; filter?: (
     const cmd = `pnpm exec pbjs ${dest} -t static-module --wrap esm -es6 -d -o ${dest}.js`;
     execSync(cmd);
 
-    await init(dest);
+    await loadproto(dest);
     await services.gen(buf);
     fs.writeFileSync(dest, buf.join('\n'));
 }
@@ -204,6 +208,7 @@ function one_type(meta: reflection.MetaInfo<IMessageOptions, IPropsOptions, {}>,
     const opt_kind = clsopts?.kind || "data";
     if (opt_kind !== "data") {
         idseq++;
+        if (idseq >= (1 << 16)) { throw new Error(`idseq ${idseq} is too large`); }
         msgidmap[name] = { id: idseq, opts: clsopts };
     }
     desc = [

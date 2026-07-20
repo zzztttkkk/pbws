@@ -1,6 +1,6 @@
 import { Appender, combine, ConsoleAppender } from "./pkgs/logger/appender.ts";
 import { AsyncFileAppender, RotationKind } from "./pkgs/logger/fs.appender.ts";
-import { Level } from "./pkgs/logger/item.ts";
+import { Item, Level } from "./pkgs/logger/item.ts";
 import { AbsLogger, logger as make, With } from "./pkgs/logger/logger.ts";
 import path from "node:path";
 import { JSONLRenderer, LineRenderer, SimpleLineRenderer } from "./pkgs/logger/renderer.ts";
@@ -24,7 +24,17 @@ interface ILoggingConifg {
     colorful?: boolean;
 }
 
-let defaultlogger: AbsLogger | null = null;
+let defaultlogger: AbsLogger | null = (() => {
+    class DummyLogger extends AbsLogger {
+        protected override dispatch(_item: Item): { renderer: LineRenderer; appender: Appender; } | null | undefined {
+            return null;
+        }
+        public override close(): Promise<void> {
+            return Promise.resolve();
+        }
+    }
+    return new DummyLogger();
+})();
 
 export async function init(cfg?: ILoggingConifg) {
     cfg = cfg ?? {};
