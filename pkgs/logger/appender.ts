@@ -7,7 +7,7 @@ export interface Appender {
 
 export class ConsoleAppender implements Appender {
 	append(at: number, log: string): Promise<void> {
-		console.log(dayjs(at).format("YYYY-MM-DD HH:mm:ss"), log);
+		console.log(dayjs(at).format("YYYY-MM-DD HH:mm:ss.SSS"), log.trim());
 		return Promise.resolve();
 	}
 
@@ -40,4 +40,17 @@ export class FuncAppender implements Appender {
 		if (this.close_fn == null) return Promise.resolve();
 		return this.close_fn();
 	}
+}
+
+export function combine(a: Appender, ...rest: Appender[]): Appender {
+	if (rest.length < 1) return a;
+	const all = [a, ...rest];
+	return new FuncAppender(
+		async (at, log) => {
+			await Promise.allSettled(all.map((a) => a.append(at, log)));
+		},
+		async () => {
+			await Promise.allSettled(all.map((a) => a.close()));
+		}
+	);
 }

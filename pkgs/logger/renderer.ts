@@ -19,11 +19,13 @@ export class SimpleLineRenderer implements LineRenderer {
 					for (const [k, v] of Object.entries(item.meta)) {
 						metabuf.push(`${k}=${JSON.stringify(v)}`);
 					}
-					meta = `[${metabuf.join("; ")}]`;
+					meta = ` [${metabuf.join("; ")}]`;
 				}
-				const times = dayjs(item.at).format(timelayout);
-				return `[${LevelStrings[item.level]}] [${times}] ${meta} Message: ${item.msg
-					}; Args: ${item.args}\n`;
+				let args = "";
+				if (item.args && item.args.length > 0) {
+					args = ` ${JSON.stringify(item.args)}`;
+				}
+				return `[${LevelStrings[item.level]}]${meta} ${item.msg};${args}\n`;
 			};
 		} else {
 			this._render_fn = (item: Item) => {
@@ -33,10 +35,14 @@ export class SimpleLineRenderer implements LineRenderer {
 					for (const [k, v] of Object.entries(item.meta)) {
 						metabuf.push(`${k}=${JSON.stringify(v)}`)
 					}
-					meta = `[${metabuf.join("; ")}]`;
+					meta = ` [${metabuf.join("; ")}]`;
 				}
-				return `[${LevelStrings[item.level]}] [${item.at}] ${meta} Message: ${item.msg
-					}; Args: ${item.args}\n`;
+				let args = "";
+				if (item.args && item.args.length > 0) {
+					args = ` ${JSON.stringify(item.args)}`;
+				}
+				return `[${LevelStrings[item.level]}]${meta} ${item.msg
+					}; ${args}\n`;
 			};
 		}
 	}

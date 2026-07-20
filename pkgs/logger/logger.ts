@@ -23,7 +23,7 @@ export abstract class AbsLogger {
 			msg,
 			args,
 		};
-		item.meta = MetaStore.getStore() || {};
+		item.meta = MetaStore.getStore();
 		const ra = this.dispatch(item);
 		if (!ra) return;
 		await ra.appender.append(item.at, ra.renderer.render(item));
