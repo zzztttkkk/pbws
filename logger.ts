@@ -59,14 +59,16 @@ export function init(cfg?: ILoggingConifg) {
 
     Object.defineProperty(globalThis, "logger", { value: defaultlogger, enumerable: false, });
 
-    process.RegisterBeforeShutdownAction(() => defaultlogger?.close());
+    process.RegisterBeforeShutdownAction(() => {
+        return defaultlogger?.close();
+    });
 }
 
 declare global {
     var logger: AbsLogger & { scope: typeof With };
 }
 
-Deno.test("logger", () => {
+Deno.test("logger.simple", () => {
     init({});
 
     logger.info("hello world");
@@ -74,4 +76,16 @@ Deno.test("logger", () => {
     logger.scope({ a: 1 }, () => {
         logger.info("hello world", "ss", false);
     });
+});
+
+Deno.test("logger.file", async () => {
+    init({ dir: "./logs", fmt: "json", timelayout: "YYYY-MM-DD HH:mm:ss.SSS" });
+
+    logger.info("hello world");
+
+    logger.scope({ a: 1 }, () => {
+        logger.info("hello world", "ss", false);
+    });
+
+    await logger.close();
 });

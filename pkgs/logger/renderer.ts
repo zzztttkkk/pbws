@@ -25,7 +25,7 @@ export class SimpleLineRenderer implements LineRenderer {
 				if (item.args && item.args.length > 0) {
 					args = ` ${JSON.stringify(item.args)}`;
 				}
-				return `[${LevelStrings[item.level]}]${meta} ${item.msg};${args}\n`;
+				return `[${dayjs(item.at).format(timelayout)}] [${LevelStrings[item.level]}]${meta} ${item.msg};${args}\n`;
 			};
 		} else {
 			this._render_fn = (item: Item) => {
@@ -41,7 +41,7 @@ export class SimpleLineRenderer implements LineRenderer {
 				if (item.args && item.args.length > 0) {
 					args = ` ${JSON.stringify(item.args)}`;
 				}
-				return `[${LevelStrings[item.level]}]${meta} ${item.msg
+				return `[${item.at}] [${LevelStrings[item.level]}]${meta} ${item.msg
 					}; ${args}\n`;
 			};
 		}
@@ -74,6 +74,9 @@ export class JSONLRenderer implements LineRenderer {
 				return fn(ele as any);
 			};
 		}
+
+
+
 	}
 
 	render(item: Item): string {

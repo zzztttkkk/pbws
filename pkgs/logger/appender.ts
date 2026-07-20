@@ -1,13 +1,11 @@
-import dayjs from "dayjs";
-
 export interface Appender {
 	append(at: number, log: string): Promise<void>;
 	close(): Promise<void>;
 }
 
 export class ConsoleAppender implements Appender {
-	append(at: number, log: string): Promise<void> {
-		console.log(dayjs(at).format("YYYY-MM-DD HH:mm:ss.SSS"), log.trim());
+	append(_at: number, log: string): Promise<void> {
+		console.log(log.trim());
 		return Promise.resolve();
 	}
 
