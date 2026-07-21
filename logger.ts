@@ -7,7 +7,7 @@ import { JSONLRenderer, LineRenderer, SimpleLineRenderer } from "./pkgs/logger/r
 import "./pkgs/internal/process.ts";
 import fs from "node:fs/promises";
 
-interface ILoggingConifg {
+export interface ILoggingConfig {
     minlevel?: Level;
 
     fmt?: "simple" | "json";
@@ -16,7 +16,7 @@ interface ILoggingConifg {
 
     // enable file logging
     dir?: string;
-    mode?: number;
+    dirmode?: number;
     name?: string;
     rotate?: RotationKind;
     bufsize?: number;
@@ -25,18 +25,37 @@ interface ILoggingConifg {
 }
 
 let defaultlogger: AbsLogger | null = (() => {
+    const ca = new ConsoleAppender();
+    const renderer = new SimpleLineRenderer({ timelayout: "yyyy-MM-dd HH:mm:ss.SSS" });
     class DummyLogger extends AbsLogger {
         protected override dispatch(_item: Item): { renderer: LineRenderer; appender: Appender; } | null | undefined {
-            return null;
+            return {
+                renderer: renderer,
+                appender: ca,
+            };
         }
         public override close(): Promise<void> {
+            this._closed = true;
             return Promise.resolve();
         }
     }
     return new DummyLogger();
 })();
 
-export async function init(cfg?: ILoggingConifg) {
+
+function mount() {
+    Object.defineProperty(defaultlogger, "scope", { value: With, enumerable: false, });
+
+    Object.defineProperty(globalThis, "logger", { value: defaultlogger, enumerable: false, });
+}
+
+mount();
+
+let initialized = false;
+export async function init(cfg?: ILoggingConfig) {
+    if (initialized) throw new Error("logger already initialized");
+    initialized = true;
+
     cfg = cfg ?? {};
     cfg.minlevel ??= Level.Trace;
     cfg.fmt ??= "simple";
@@ -47,7 +66,7 @@ export async function init(cfg?: ILoggingConifg) {
     if (cfg.dir) {
         const dir = path.resolve(cfg.dir);
 
-        await fs.mkdir(dir, { recursive: true, mode: cfg.mode ?? 0o755 });
+        await fs.mkdir(dir, { recursive: true, mode: cfg.dirmode ?? 0o755 });
 
         const name = path.basename(cfg.name || "pbws");
 
@@ -76,13 +95,14 @@ export async function init(cfg?: ILoggingConifg) {
         }
     });
 
-    Object.defineProperty(defaultlogger, "scope", { value: With, enumerable: false, });
+    mount();
 
-    Object.defineProperty(globalThis, "logger", { value: defaultlogger, enumerable: false, });
-
-    process.RegisterBeforeShutdownAction(() => {
-        return defaultlogger?.close();
-    });
+    process.RegisterBeforeShutdownAction(
+        () => {
+            return defaultlogger?.close();
+        },
+        process.Order.Last,
+    );
 }
 
 declare global {

@@ -3,6 +3,7 @@ import { RwLock } from "./pkgs/sync/index.ts";
 import { AppError } from "./errors.ts";
 import { decode, encodebycls } from "./packet.ts";
 import { FailedResponse } from "./gen.ts";
+import "./logger.ts";
 
 export interface IConnectionOpts {
     onclose: () => void;
@@ -38,11 +39,14 @@ export class Connection<T extends { id: string }> {
             const rawmsg = evt.data as ArrayBuffer;
 
             ConnStateStorage.run(this, async () => {
-                const buf = Buffer.from(rawmsg);
                 try {
+                    const buf = Buffer.from(rawmsg);
                     await this.opts.onmsg(await decode(buf));
                 } catch (e) {
-                    console.error("fatal error in handling", e);
+                    logger.error(
+                        "connection: fatal error in handling",
+                        { e, csid: this.state.id, stack: e instanceof Error ? e.stack : null }
+                    );
                     this.close();
                 }
             });
@@ -52,7 +56,7 @@ export class Connection<T extends { id: string }> {
             this.opts.onclose();
         });
         this.sock.addEventListener("error", (e) => {
-            console.error(e);
+            logger.error("connection: socket error", { e, csid: this.state.id, });
         });
     }
 

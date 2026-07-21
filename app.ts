@@ -1,10 +1,11 @@
 import { encodebycls, version } from "./packet.ts";
 import { AppError, ErrorCode } from "./errors.ts";
 import { entry_state, globimport } from "./internal.ts";
-import { Counter, IReportor, reportor } from "./pkgs/internal/reportor.ts";
+import { IReportor, reportor } from "./pkgs/internal/reportor.ts";
 import { load } from "./services.ts";
 import { EmptyResponse, FailedResponse } from "./gen.ts";
 import { Connection } from "./connection.ts";
+import "./logger.ts";
 
 export class AppConfig {
     hostname?: string;
@@ -23,12 +24,6 @@ export interface IAppImpls<CS extends IConnState> {
     auth(req: Request, info: Deno.ServeHandlerInfo): Promise<CS | Error | null>;
 }
 
-enum AppCountKind {
-    AuthFailed,
-    ServeFailed,
-    InternalError,
-}
-
 let conn_seq = 0n;
 
 @reportor
@@ -38,7 +33,6 @@ export class App<CS extends IConnState> implements IReportor {
 
     private services: Awaited<ReturnType<typeof load>> | null = null;
     private connections: Map<string, Connection<CS>> = new Map;
-    private counter = new Counter(AppCountKind, true);
 
     private server: Deno.HttpServer | null = null;
 
@@ -56,7 +50,6 @@ export class App<CS extends IConnState> implements IReportor {
         return JSON.stringify({
             kind: "PBWSApp",
             conns: this.connections.size,
-            counter: this.counter,
         });
     }
 
@@ -111,11 +104,9 @@ export class App<CS extends IConnState> implements IReportor {
                     state = e instanceof Error ? e : new Error(`${Deno.inspect(e)}`);
                 }
                 if (state == null) {
-                    this.counter.incr(AppCountKind.AuthFailed);
                     return new Response(null, { status: 401 });
                 }
                 if (state instanceof Error) {
-                    this.counter.incr(AppCountKind.AuthFailed);
                     return new Response(null, { status: 401 });
                 }
 
@@ -141,17 +132,15 @@ export class App<CS extends IConnState> implements IReportor {
                                 try {
                                     resp = await handle.fnc(msg);
                                 } catch (e) {
-                                    this.counter.incr(AppCountKind.ServeFailed);
                                     let msg: FailedResponse;
                                     if (e instanceof AppError) {
                                         msg = e.toresp();
-                                        console.error("AppError:", msg);
+                                        logger.error("app: code error", { code: e.code, msg: e.message, meta: e.meta, stack: e.stack, csid: conn.state.id, handle: handle.name });
                                     } else {
-                                        this.counter.incr(AppCountKind.InternalError);
                                         msg = new FailedResponse();
                                         msg.code = ErrorCode.InternalError;
                                         msg.message = "Internal server error";
-                                        console.error("Unexpected error:", e);
+                                        logger.error("app: unexpected serve error", { e: e, stack: e instanceof Error ? e.stack : null, csid: conn.state.id, handle: handle.name });
                                     }
                                     const buf = await encodebycls(FailedResponse, reqid, msg);
                                     socket.send(buf!);
@@ -162,7 +151,7 @@ export class App<CS extends IConnState> implements IReportor {
                                     return;
                                 }
                                 if (typeof resp !== "object") {
-                                    console.error(`response must be object, ${msgid}, ${Deno.inspect(resp)}`);
+                                    logger.error(`app: the serve response is not an object`, { resp, csid: conn.state.id, handle: handle.name });
                                     return conn.fail(reqid, ErrorCode.InternalError);
                                 }
                                 socket.send(await encodebycls(resp.constructor, reqid, resp));
